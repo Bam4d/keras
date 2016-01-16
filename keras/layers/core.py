@@ -1921,3 +1921,93 @@ class Highway(Layer):
                   'input_dim': self.input_dim}
         base_config = super(Highway, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+
+
+class NeuralStack(Layer):
+    ''' A Layer that wraps a recurrent layer with a differentiable neural stack
+
+    # References
+        - [Learning to transduce with unbounded memory](http://arxiv.org/abs/1506.02516)
+    '''
+
+    def __init__(self, vector_size, max_steps, bsz, controller, **kwargs):
+        if K._BACKEND != 'theano':
+            raise Exception('NeuralStack is currently unsupported in TensorFlow.')
+
+
+
+
+        self.vector_size = vector_size
+
+        # Set an initial max_steps for the memory here. Should be the same as the number of steps
+        self.max_steps = max_steps
+        self.bsz = bsz
+        self.step = 0
+
+        # TODO: bunch of asserts to check the controller size matches the memory size that we
+
+        self._controller = controller
+        self._controller_step = controller.step
+        super(NeuralStack, self).__init__(**kwargs)
+
+    def build(self):
+        self.vectors = K.variable(np.zeros([self.vector_size, self.max_steps, self.bsz]))
+        self.strengths = K.variable(np.zeros([self.max_steps, self.bsz]))
+
+    def _rev_cumsum(self, seq):
+        idxs = K.variable(np.arange(K.eval(seq).shape[0]))
+        cumsum_m = K.permute_dimensions(idxs, ['x', 0]) <= K.permute_dimensions(idxs, [0, 'x'])
+        return K.dot(K.transpose(seq), cumsum_m)
+
+    def _step(self, pop, push, vec):
+        ncs = K.concatenate([self._rev_cumsum(self.strengths[1:self.step]),
+                             K.zeros([self.bsz, 1])])
+
+        prev_strengths = self.strengths[:self.step]
+        prev_vectors = self.vectors[:, :self.step]
+        # Have to implicitly use theano here
+        import theano
+        import theano.tensor as T
+
+        updated_strengths = K.relu(prev_strengths-K.transpose(K.relu(K.repeat_elements(K.transpose(pop), self.step, 1) - ncs)))
+
+        self.step += 1
+        self.strengths = T.set_subtensor(self.strengths[:self.step], K.concatenate([updated_strengths, push], axis=0))
+        self.vectors = T.set_subtensor(self.vectors[:, :self.step], K.concatenate([prev_vectors, K.expand_dims(vec, dim=1)], axis=1))
+
+        # Can probably use the previous cumulative sum here instead of re-doing it with the new values?
+        new_ncs = K.concatenate([self._rev_cumsum(self.strengths[1:self.step]),
+                             K.zeros([self.bsz, 1])])
+
+        score = K.min([self.strengths[:self.step], K.transpose(K.relu(1-new_ncs))], axis=0)
+
+
+        # Would love to replace this with something parallel
+        r, l = theano.scan(fn=lambda A, B: K.dot(A, B),
+                  outputs_info=None,
+                  sequences=[K.transpose(score), K.transpose(self.vectors[:self.step])],
+                  n_steps=self.bsz)
+
+        return K.tranpose(r)
+
+    def get_output(self, train=False):
+        X = self.get_input(train)
+
+        def step(x, states):
+
+            r = states[2]
+            input = K.concatenate([x, r])
+
+            output, states = self._controller_step(input, states[1])
+
+            #pop =
+            #push =
+            #v =
+
+            return output, [states, r]
+
+
+        last_output, outputs, states = K.rnn(step, X, [(empty_h, empty_c), empty_r], masking=False)
+        #outputs = self.activation(outputs)
+        return outputs
