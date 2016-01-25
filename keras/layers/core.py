@@ -1989,7 +1989,7 @@ class NeuralStack(Layer):
                   sequences=[K.transpose(score), K.transpose(self.vectors[:self.step])],
                   n_steps=self.bsz)
 
-        return K.tranpose(r)
+        return K.transpose(r)
 
     def get_output(self, train=False):
         X = self.get_input(train)
