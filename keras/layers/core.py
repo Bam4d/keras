@@ -1982,14 +1982,13 @@ class NeuralStack(Layer):
 
         score = K.min([self.strengths[:self.step], K.transpose(K.relu(1-new_ncs))], axis=0)
 
-
         # Would love to replace this with something parallel
         r, l = theano.scan(fn=lambda A, B: K.dot(A, B),
                   outputs_info=None,
-                  sequences=[K.transpose(score), K.transpose(self.vectors[:self.step])],
+                  sequences=[K.transpose(score), K.transpose(self.vectors[:, :self.step])],
                   n_steps=self.bsz)
 
-        return K.transpose(r)
+        return self.vectors[:, :self.step], self.strengths[:self.step], K.transpose(r)
 
     def get_output(self, train=False):
         X = self.get_input(train)
