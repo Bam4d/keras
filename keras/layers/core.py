@@ -1944,7 +1944,7 @@ class NeuralStack(Layer):
         self._controller = controller
 
         # Add the push and pop values, and the vector
-        self.output_dim + 2 + self.vector_size
+        self.output_dim = self.output_dim + 2 + self.vector_size
 
 
         self._controller_step = controller.step
