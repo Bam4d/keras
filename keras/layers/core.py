@@ -1935,23 +1935,23 @@ class NeuralStack(Layer):
         if K._BACKEND != 'theano':
             raise Exception('NeuralStack is currently unsupported in TensorFlow.')
 
-
-
-
         self.vector_size = vector_size
 
         # Set an initial max_steps for the memory here. Should be the same as the number of steps
         self.max_steps = max_steps
         self.bsz = bsz
         self.step = 0
-
-        # TODO: bunch of asserts to check the controller size matches the memory size that we
-
         self._controller = controller
+
+        # Add the push and pop values, and the vector
+        self.output_dim + 2 + self.vector_size
+
+
         self._controller_step = controller.step
         super(NeuralStack, self).__init__(**kwargs)
 
     def build(self):
+        self._controller.build()
         self.vectors = K.variable(np.zeros([self.vector_size, self.max_steps, self.bsz]))
         self.strengths = K.variable(np.zeros([self.max_steps, self.bsz]))
 
@@ -1995,18 +1995,21 @@ class NeuralStack(Layer):
 
         def step(x, states):
 
-            r = states[2]
-            input = K.concatenate([x, r])
+            prev_r = states[1]
+            input = K.concatenate([x, prev_r])
 
-            output, states = self._controller_step(input, states[1])
+            output, states = self._controller_step(input, states[0])
 
-            #pop =
-            #push =
-            #v =
+            controller_output = output[self._output_start:self._output_end]
+            pop = output[self._pop_start:self._pop_end]
+            push = output[self._push_start:self._push_end]
+            v = output[self._v_start:self._v_end]
 
-            return output, [states, r]
+            _, _, r = self._step(push, pop, v)
+
+            return controller_output, [states, r]
 
 
-        last_output, outputs, states = K.rnn(step, X, [(empty_h, empty_c), empty_r], masking=False)
-        #outputs = self.activation(outputs)
+        last_output, outputs, states = K.rnn(step, X, [self._controller.states, empty_r], masking=False)
+        outputs = self.activation(outputs)
         return outputs
