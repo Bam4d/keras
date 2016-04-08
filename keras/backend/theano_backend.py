@@ -147,6 +147,10 @@ def sum(x, axis=None, keepdims=False):
     '''
     return T.sum(x, axis=axis, keepdims=keepdims)
 
+def cumsum(x, axis=None):
+    '''Cumulative sum of the values in the tensor along the specified axis.
+    '''
+    return T.cumsum(x, axis=axis)
 
 def prod(x, axis=None, keepdims=False):
     '''Multiply the values in a tensor, alongside the specified axis.

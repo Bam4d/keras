@@ -69,12 +69,12 @@ def test_SimpleRNN():
     _runner(recurrent.SimpleRNN)
 
 
-def test_GRU():
-    _runner(recurrent.GRU)
-
-
-def test_LSTM():
-    _runner(recurrent.LSTM)
+# def test_GRU():
+#     _runner(recurrent.GRU)
+#
+#
+# def test_LSTM():
+#     _runner(recurrent.LSTM)
 
 
 if __name__ == '__main__':

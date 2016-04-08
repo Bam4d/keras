@@ -465,21 +465,22 @@ class NeuralStack(Recurrent):
         - [Learning to transduce with unbounded memory](http://arxiv.org/abs/1506.02516)
     '''
 
-    def __init__(self, stack_vector_size, input_length, bsz, controller, **kwargs):
+    def __init__(self, controller_class, output_dim, stack_vector_size, bsz, **kwargs):
         if K._BACKEND != 'theano':
             raise Exception('NeuralStack is currently unsupported in TensorFlow.')
 
+        # for some reason the stack update calculations start at 1 and not at 0, so im putting a switch to test
+        # starting at one and at zero
+        self.stindex = 1
+
         self.stack_vector_size = stack_vector_size
 
-        # Set an initial max_steps for the memory here. Should be the same as the number of steps
-        self.input_length = input_length
         self.bsz = bsz
-        self.step = 0
-        self._controller = controller
 
+        self._controller_class = controller_class
 
         self._output_start = 0
-        self._output_end = self._output_start+self._controller.output_dim
+        self._output_end = self._output_start+output_dim
         self._pop_start = self._output_end
         self._pop_end = self._pop_start + 1
         self._push_start = self._pop_end
@@ -487,76 +488,116 @@ class NeuralStack(Recurrent):
         self._v_start = self._push_end
         self._v_end = self._v_start + self.stack_vector_size
 
-        # Add the push and pop values, and the vector
-        self._controller.output_dim = self._controller.output_dim + 2 + self.stack_vector_size
-
-        self.output_dim = self.stack_vector_size
-
-        self._controller_step = controller.step
+        self.output_dim = output_dim
 
         super(NeuralStack, self).__init__(**kwargs)
 
     def build(self):
-        self._controller.build()
-        self.vectors = K.variable(np.zeros([self.stack_vector_size, self.input_length, self.bsz]))
-        self.strengths = K.variable(np.zeros([self.input_length, self.bsz]))
+        input_shape = self.input_shape
+        input_dim = input_shape[2]
+        self.input_dim = input_dim
+        input_length = input_shape[1]
+
+        # Have to initialize and build the controller here because we have to build it when we know the dimensions of the previous input layer
+        self.controller_output_dim = self.output_dim + 2 + self.stack_vector_size
+        self.controller_input_dim = self.stack_vector_size + self._input_shape[2]
+        controller_input_shape = (self._input_shape[1], self.controller_input_dim)
+
+        self._controller = self._controller_class(self.controller_output_dim, weights=None, input_shape=controller_input_shape)
+        self._controller_step = self._controller.step
+
+        # the params for this layer are the params for the controller layer
+        self.params = self._controller.params
 
     def _rev_cumsum(self, seq):
-        idxs = K.variable(np.arange(K.eval(seq).shape[0]))
-        cumsum_m = K.permute_dimensions(idxs, ['x', 0]) <= K.permute_dimensions(idxs, [0, 'x'])
-        return K.dot(K.transpose(seq), cumsum_m)
+        return K.cumsum(seq[::-1],axis=0)[::-1].T
 
     def _step(self, pop, push, vec):
-        ncs = K.concatenate([self._rev_cumsum(self.strengths[1:self.step]),
-                             K.zeros([self.bsz, 1])])
 
-        prev_strengths = self.strengths[:self.step]
-        prev_vectors = self.vectors[:, :self.step]
+        ncs = K.concatenate([self._rev_cumsum(self.strengths[self.stindex:self.step_count]),
+                                 K.zeros([self.bsz, 1])])
+
+        prev_strengths = self.strengths[:self.step_count]
+        prev_vectors = self.vectors[:, :self.step_count]
         # Have to implicitly use theano here
         import theano
         import theano.tensor as T
 
-        updated_strengths = K.relu(prev_strengths-K.transpose(K.relu(K.repeat_elements(K.transpose(pop), self.step, 1) - ncs)))
+        updated_strengths = K.relu(prev_strengths-K.transpose(K.relu(K.repeat_elements(K.transpose(pop), self.step_count, 1) - ncs)))
 
-        self.step += 1
-        self.strengths = T.set_subtensor(self.strengths[:self.step], K.concatenate([updated_strengths, push], axis=0))
-        self.vectors = T.set_subtensor(self.vectors[:, :self.step], K.concatenate([prev_vectors, K.expand_dims(vec, dim=1)], axis=1))
+        self.step_count += 1
+        self.strengths = T.set_subtensor(self.strengths[:self.step_count], K.concatenate([updated_strengths, push], axis=0))
+        self.vectors = T.set_subtensor(self.vectors[:, :self.step_count], K.concatenate([prev_vectors, K.expand_dims(vec, dim=1)], axis=1))
 
-        # Can probably use the previous cumulative sum here instead of re-doing it with the new values?
-        new_ncs = K.concatenate([self._rev_cumsum(self.strengths[1:self.step]),
+
+        new_ncs = K.concatenate([self._rev_cumsum(self.strengths[self.stindex:self.step_count]),
                              K.zeros([self.bsz, 1])])
 
-        score = K.min([self.strengths[:self.step], K.transpose(K.relu(1-new_ncs))], axis=0)
 
-        # Would love to replace this with something parallel
+        score = K.min([self.strengths[:self.step_count], K.transpose(K.relu(1-new_ncs))], axis=0)
+
+        # Would love to replace this with something parallel, this is essentially a batched_dot in numpy
         r, l = theano.scan(fn=lambda A, B: K.dot(A, B),
                   outputs_info=None,
-                  sequences=[K.transpose(score), K.transpose(self.vectors[:, :self.step])],
+                  sequences=[K.transpose(score), K.transpose(self.vectors[:, :self.step_count])],
                   n_steps=self.bsz)
 
-        return self.vectors[:, :self.step], self.strengths[:self.step], K.transpose(r)
+        return self.vectors[:, :self.step_count], self.strengths[:self.step_count], K.transpose(r)
+
+    def full_step(self, x, states):
+        ''' The entire step including the controller and the neural stack
+        :param states:
+        :return:
+        '''
+
+        prev_r = states[0]
+        states = states[1:]
+        input = K.concatenate([x, prev_r])
+
+        output, states = self._controller_step(input, states)
+
+        controller_output = output[:,self._output_start:self._output_end]
+        pop = output[:,self._pop_start:self._pop_end]
+        push = output[:,self._push_start:self._push_end]
+        v = output[:,self._v_start:self._v_end]
+
+        # Should update this so we don;t have to transpose these
+        _, _, r = self._step(push.T, pop.T, v.T)
+
+        states.insert(0, r.T)
+
+        return controller_output, states
+
+    def _get_initial_controller_states(self, samples):
+        # build an all-zero tensor of shape (samples, output_dim)
+        initial_state = K.zeros((samples, self.controller_input_dim), name='initial_state')  # (samples, input_dim)
+        reducer = K.zeros((self.controller_input_dim, self.controller_output_dim), name='reducer')
+        initial_state = K.dot(initial_state, reducer)  # (samples, output_dim)
+        initial_states = [initial_state for _ in range(len(self._controller.states))]
+        return initial_states
+
+    def reset_stack(self):
+        input_length = self.input_shape[1]
+        self.step_count = K.variable(1, dtype=np.int32)
+        self.vectors = K.variable(np.zeros([self.stack_vector_size, input_length, self.bsz]))
+        self.strengths = K.variable(np.zeros([input_length, self.bsz]))
 
     def get_output(self, train=False):
         X = self.get_input(train)
 
-        def step(x, states):
+        # Have to reset the stack here, could try to make this stateful?
+        self.reset_stack()
 
-            prev_r = states[1]
-            input = K.concatenate([x, prev_r])
+        #input_shape
+        initial_states = self._get_initial_controller_states(self.bsz)
+        initial_r = K.zeros((self.bsz, self.stack_vector_size), name='initial_r')
+        initial_states.insert(0, initial_r)
 
-            output, states = self._controller_step(input, states[0])
+        last_output, outputs, states = K.rnn(self.full_step, X, initial_states=initial_states, go_backwards=False, masking=False)
 
-            controller_output = output[self._output_start:self._output_end]
-            pop = output[self._pop_start:self._pop_end]
-            push = output[self._push_start:self._push_end]
-            v = output[self._v_start:self._v_end]
+        # if self.stateful:
+        #     self.updates = []
+        #     for i in range(len(states)):
+        #         self.updates.append((self.states[i], states[i]))
 
-            _, _, r = self._step(push, pop, v)
-
-            return controller_output, [states, r]
-
-        initial_r = K.zeros((self.stack_vector_size, self.bsz))
-
-
-        last_output, outputs, states = K.rnn(step, X, [self._controller.get_initial_states(X), initial_r], masking=False)
         return outputs
