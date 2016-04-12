@@ -595,9 +595,9 @@ class NeuralStack(Recurrent):
 
         last_output, outputs, states = K.rnn(self.full_step, X, initial_states=initial_states, go_backwards=False, masking=False)
 
-        # if self.stateful:
-        #     self.updates = []
-        #     for i in range(len(states)):
-        #         self.updates.append((self.states[i], states[i]))
+        if self.return_sequences:
+            return outputs
+        else:
+            return last_output
 
         return outputs
