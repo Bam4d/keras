@@ -1,5 +1,4 @@
 
-from __future__ import print_function
 from keras.models import Sequential, slice_X
 from keras.layers.core import Activation, Dropout, Dense
 from keras.layers import NeuralStack, recurrent
@@ -37,22 +36,24 @@ def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
     for s in range(number_of_sequences):
 
         # have to take into account the start, stop and reverse chars, and divide the sequence by two so we can reverse
-        sequence_length = np.random.randint(high=(max_sequence_length-3/2))
+        sequence_length = np.random.randint(10, high=(max_sequence_length-3)/2)
         sequence = np.random.randint(low=3, high=len(lookup_table.chars), size=sequence_length)
 
         # the start, stop and reverse characters
         start = 0 # {
         stop = 1 # }
         reverse = 2 # |
-        full_sequence = np.concatenate([start, sequence, reverse, sequence[::-1], stop])
+        full_sequence = np.concatenate([[start], sequence, [reverse], sequence[::-1], [stop]])
 
-        x = np.zeros((max_sequence_length, lookup_table.maxlen))
-        for i, c in enumerate(full_sequence):
-            x[i, c] = 1
+        lookup_table.encode(full_sequence)
+
+        # Pad with stop symbol
+        for k in range(len(full_sequence), max_sequence_length):
+            x[k, 1] = 1
 
         X.append(x)
 
-        print lookup_table.decode(X)
+        print lookup_table.decode(x)
 
     return X
 
@@ -77,10 +78,15 @@ RNN = recurrent.LSTM
 HIDDEN_SIZE = 128
 BATCH_SIZE = 128
 
+
 # have to add the start, stop and reverse chars
 lookup_table = CharacterTable(chars, MAX_SEQUENCE_LENGTH)
 
-print('Build model...')
+print 'Generating training data model...'
+X = generate_sequences(lookup_table, NUMBER_OF_SEQUENCES, MAX_SEQUENCE_LENGTH)
+
+
+print 'Building model...'
 model = Sequential()
 
 neural_stack_layer = NeuralStack(RNN, BATCH_SIZE, STACK_VECTOR_SIZE, MAX_SEQUENCE_LENGTH, len(chars), len(chars))
