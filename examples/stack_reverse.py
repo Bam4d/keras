@@ -39,7 +39,8 @@ class CharacterTable(object):
 
 def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
 
-    X = []
+    X = np.zeros((number_of_sequences, max_sequence_length, len(lookup_table.chars)))
+    Y = np.zeros((number_of_sequences, max_sequence_length, len(lookup_table.chars)))
     for s in range(number_of_sequences):
 
         # have to take into account the start, stop and reverse chars, and divide the sequence by two so we can reverse
@@ -50,17 +51,27 @@ def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
         start = 26 # {
         reverse = 27 # |
         stop = 28 # }
-        full_sequence = np.concatenate([[start], sequence, [reverse], sequence[::-1], [stop]])
 
-        x = lookup_table.one_hot(full_sequence)
+        stop_seq = np.zeros((sequence_length))
+        start_seq = np.zeros((sequence_length))
 
-        # Pad with stop symbol
-        for k in range(len(full_sequence), max_sequence_length):
+        full_x_sequence = np.concatenate([[start],  sequence, [reverse],  stop_seq,       [stop]])
+        full_y_sequence = np.concatenate([[start],  start_seq, [reverse], sequence[::-1], [stop]])
+
+        x = lookup_table.one_hot(full_x_sequence)
+        y = lookup_table.one_hot(full_y_sequence)
+
+        # Pad x and y with stop symbol
+        for k in range(len(full_x_sequence), max_sequence_length):
             x[k, stop] = 1
+            y[k, stop] = 1
 
-        X.append(x)
+        X[s] = x
+        Y[s] = y
 
-    return X
+
+
+    return X, Y
 
 
 
@@ -79,14 +90,14 @@ chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 MAX_SEQUENCE_LENGTH = 500
 
 RNN = recurrent.LSTM
-OUTPUT_SIZE = 128
+OUTPUT_SIZE = len(chars)
 BATCH_SIZE = 128
 
 # Have to add the start, stop and reverse chars
 lookup_table = CharacterTable(chars, MAX_SEQUENCE_LENGTH)
 
 print 'Generating training data model...'
-X = generate_sequences(lookup_table, NUMBER_OF_SEQUENCES, MAX_SEQUENCE_LENGTH)
+X, Y = generate_sequences(lookup_table, NUMBER_OF_SEQUENCES, MAX_SEQUENCE_LENGTH)
 
 print 'Building model...'
 model = Sequential()
@@ -102,4 +113,4 @@ model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
 print 'Model compiled..'
 
 print 'Fitting..'
-model.fit(X, y, batch_size=128, nb_epoch=1)
+model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=1)
