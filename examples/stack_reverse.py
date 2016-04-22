@@ -1,6 +1,6 @@
 
 from keras.models import Sequential, slice_X
-from keras.layers.core import Activation, Dropout, Dense
+from keras.layers.core import Activation, Dropout, TimeDistributedDense
 from keras.layers import NeuralStack, recurrent
 import numpy as np
 
@@ -69,15 +69,13 @@ def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
         X[s] = x
         Y[s] = y
 
-
-
     return X, Y
 
 
 
 # Number of sequences in the test set to generate
-NUMBER_OF_SEQUENCES = 10000
-STACK_VECTOR_SIZE = 100
+NUMBER_OF_SEQUENCES = 1000
+STACK_VECTOR_SIZE = 50
 
 
 # This is the list of characters to  we will learn to reverse
@@ -87,11 +85,11 @@ chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 # | reverse character
 
 # This is the max sequence length plus the reversal, plus the start, stop and reverse characters
-MAX_SEQUENCE_LENGTH = 500
+MAX_SEQUENCE_LENGTH = 50
 
-RNN = recurrent.LSTM
+RNN = recurrent.SimpleRNN
 OUTPUT_SIZE = len(chars)
-BATCH_SIZE = 128
+BATCH_SIZE = 1
 
 # Have to add the start, stop and reverse chars
 lookup_table = CharacterTable(chars, MAX_SEQUENCE_LENGTH)
@@ -102,15 +100,20 @@ X, Y = generate_sequences(lookup_table, NUMBER_OF_SEQUENCES, MAX_SEQUENCE_LENGTH
 print 'Building model...'
 model = Sequential()
 
-neural_stack_layer = NeuralStack(RNN, OUTPUT_SIZE, STACK_VECTOR_SIZE, BATCH_SIZE, input_shape=(MAX_SEQUENCE_LENGTH, len(chars)))
+neural_stack_layer = NeuralStack(RNN, OUTPUT_SIZE, STACK_VECTOR_SIZE, BATCH_SIZE, return_sequences=True, input_shape=(MAX_SEQUENCE_LENGTH, len(chars)))
 
 model.add(neural_stack_layer)
-model.add(Dropout(0.2))
-model.add(Dense(len(chars)))
 model.add(Activation('softmax'))
 
+print 'Compiling model..'
 model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
 print 'Model compiled..'
 
 print 'Fitting..'
-model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=1)
+res = model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=1, validation_split=0.25)
+
+X, Y = generate_sequences(lookup_table, 1, 50)
+
+preds = model.predict(X)
+
+print preds
