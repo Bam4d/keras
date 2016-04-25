@@ -2,6 +2,7 @@
 from keras.models import Sequential, slice_X
 from keras.layers.core import Activation, Dropout, TimeDistributedDense
 from keras.layers import NeuralStack, recurrent
+from keras.optimizers import RMSprop
 import numpy as np
 
 class CharacterTable(object):
@@ -89,7 +90,7 @@ MAX_SEQUENCE_LENGTH = 50
 
 RNN = recurrent.SimpleRNN
 OUTPUT_SIZE = len(chars)
-BATCH_SIZE = 1
+BATCH_SIZE = 10
 
 # Have to add the start, stop and reverse chars
 lookup_table = CharacterTable(chars, MAX_SEQUENCE_LENGTH)
@@ -106,7 +107,8 @@ model.add(neural_stack_layer)
 model.add(Activation('softmax'))
 
 print 'Compiling model..'
-model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+rmsprop = RMSprop(clipvalue=1.0)
+model.compile(loss='categorical_crossentropy', optimizer=rmsprop)
 print 'Model compiled..'
 
 print 'Fitting..'

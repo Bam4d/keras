@@ -465,12 +465,15 @@ class NeuralStack(Recurrent):
         - [Learning to transduce with unbounded memory](http://arxiv.org/abs/1506.02516)
     '''
 
-    def __init__(self, controller_class, output_dim, stack_vector_size, bsz, **kwargs):
+    def __init__(self, controller_class, controller_output_dim, output_dim, stack_vector_size, bsz,
+                 init='glorot_uniform', **kwargs):
         if K._BACKEND != 'theano':
             raise Exception('NeuralStack is currently unsupported in TensorFlow.')
 
         # for some reason the stack update calculations start at 1 and not at 0, so im putting a switch to test
         # starting at one and at zero
+        self.init = initializations.get(init)
+
         self.stindex = 1
 
         self.stack_vector_size = stack_vector_size
@@ -489,6 +492,7 @@ class NeuralStack(Recurrent):
         self._v_end = self._v_start + self.stack_vector_size
 
         self.output_dim = output_dim
+        self.controller_output_dim = controller_output_dim
 
         super(NeuralStack, self).__init__(**kwargs)
 
@@ -498,13 +502,26 @@ class NeuralStack(Recurrent):
         self.input_dim = input_dim
         input_length = input_shape[1]
 
-        # Have to initialize and build the controller here because we have to build it when we know the dimensions of the previous input layer
-        self.controller_output_dim = self.output_dim + 2 + self.stack_vector_size
+        # Assume the controller output dimensions are the same as the output dimensions of our stack
         self.controller_input_dim = self.stack_vector_size + self._input_shape[2]
         controller_input_shape = (self._input_shape[1], self.controller_input_dim)
 
         self._controller = self._controller_class(self.controller_output_dim, weights=None, input_shape=controller_input_shape)
         self._controller_step = self._controller.step
+
+        # Weights for the push, pop, vector and output
+        self.W_d = self.init((self.controller_output_dim, 1))
+        self.b_d = self.init((self.controller_output_dim,))
+
+        self.W_u = self.init((self.controller_output_dim, 1))
+        # Pop bias initialization starting at -1 as described in the paper
+        self.b_u = K.ones((self.controller_output_dim,))*-1
+
+        self.W_v = self.init((self.controller_output_dim, self.stack_vector_size))
+        self.b_v = self.init((self.controller_output_dim,))
+
+        self.W_o = self.init((self.controller_output_dim, self.output_dim))
+        self.b_o = self.init((self.controller_output_dim,))
 
         # the params for this layer are the params for the controller layer
         self.params = self._controller.params
@@ -556,13 +573,14 @@ class NeuralStack(Recurrent):
 
         output, states = self._controller_step(input, states)
 
-        controller_output = output[:,self._output_start:self._output_end]
-        pop = output[:,self._pop_start:self._pop_end]
-        push = output[:,self._push_start:self._push_end]
-        v = output[:,self._v_start:self._v_end]
+        u = K.sigmoid(K.dot(self.W_u, output))
+        d = K.sigmoid(K.dot(self.W_d, output))
+        v = K.tanh(K.dot(self.W_v, output))
+
+        controller_output = K.tanh(K.dot(self.W_o, output))
 
         # Should update this so we don;t have to transpose these
-        _, _, r = self._step(push.T, pop.T, v.T)
+        _, _, r = self._step(u.T, d.T, v.T)
 
         states.insert(0, r.T)
 
