@@ -511,20 +511,20 @@ class NeuralStack(Recurrent):
 
         # Weights for the push, pop, vector and output
         self.W_d = self.init((self.controller_output_dim, 1))
-        self.b_d = self.init((self.controller_output_dim,))
+        self.b_d = self.init((1,))
 
         self.W_u = self.init((self.controller_output_dim, 1))
         # Pop bias initialization starting at -1 as described in the paper
-        self.b_u = K.ones((self.controller_output_dim,))*-1
+        self.b_u = K.ones((1,))
 
         self.W_v = self.init((self.controller_output_dim, self.stack_vector_size))
-        self.b_v = self.init((self.controller_output_dim,))
+        self.b_v = self.init((self.stack_vector_size,))
 
         self.W_o = self.init((self.controller_output_dim, self.output_dim))
-        self.b_o = self.init((self.controller_output_dim,))
+        self.b_o = self.init((self.output_dim,))
 
         # the params for this layer are the params for the controller layer
-        self.params = self._controller.params
+        self.params = [self.W_d, self.b_d, self.W_u, self.b_u, self.W_v, self.b_v, self.W_o, self.b_o] + self._controller.params
 
     def _rev_cumsum(self, seq):
         return K.cumsum(seq[::-1],axis=0)[::-1].T
@@ -571,20 +571,20 @@ class NeuralStack(Recurrent):
         states = states[1:]
         input = K.concatenate([x, prev_r])
 
-        output, states = self._controller_step(input, states)
+        controller_output, states = self._controller_step(input, states)
 
-        u = K.sigmoid(K.dot(self.W_u, output))
-        d = K.sigmoid(K.dot(self.W_d, output))
-        v = K.tanh(K.dot(self.W_v, output))
+        u = K.sigmoid(K.dot(controller_output, self.W_u) + self.b_u)
+        d = K.sigmoid(K.dot(controller_output ,self.W_d) + self.b_d)
+        v = K.tanh(K.dot(controller_output, self.W_v) + self.b_v)
 
-        controller_output = K.tanh(K.dot(self.W_o, output))
+        output = K.tanh(K.dot(controller_output, self.W_o) + self.b_o)
 
         # Should update this so we don;t have to transpose these
         _, _, r = self._step(u.T, d.T, v.T)
 
         states.insert(0, r.T)
 
-        return controller_output, states
+        return output, states
 
     def _get_initial_controller_states(self, samples):
         # build an all-zero tensor of shape (samples, output_dim)

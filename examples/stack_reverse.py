@@ -53,8 +53,8 @@ def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
         reverse = 27 # |
         stop = 28 # }
 
-        stop_seq = np.zeros((sequence_length))
-        start_seq = np.zeros((sequence_length))
+        stop_seq = np.zeros((sequence_length))*stop
+        start_seq = np.zeros((sequence_length))*start
 
         full_x_sequence = np.concatenate([[start],  sequence, [reverse],  stop_seq,       [stop]])
         full_y_sequence = np.concatenate([[start],  start_seq, [reverse], sequence[::-1], [stop]])
@@ -76,7 +76,7 @@ def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
 
 # Number of sequences in the test set to generate
 NUMBER_OF_SEQUENCES = 1000
-STACK_VECTOR_SIZE = 50
+
 
 
 # This is the list of characters to  we will learn to reverse
@@ -89,6 +89,8 @@ chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 MAX_SEQUENCE_LENGTH = 50
 
 RNN = recurrent.SimpleRNN
+CONTROLLER_OUTPUT_SIZE = len(chars)
+STACK_VECTOR_SIZE = len(chars)
 OUTPUT_SIZE = len(chars)
 BATCH_SIZE = 10
 
@@ -101,7 +103,7 @@ X, Y = generate_sequences(lookup_table, NUMBER_OF_SEQUENCES, MAX_SEQUENCE_LENGTH
 print 'Building model...'
 model = Sequential()
 
-neural_stack_layer = NeuralStack(RNN, OUTPUT_SIZE, STACK_VECTOR_SIZE, BATCH_SIZE, return_sequences=True, input_shape=(MAX_SEQUENCE_LENGTH, len(chars)))
+neural_stack_layer = NeuralStack(RNN, CONTROLLER_OUTPUT_SIZE, OUTPUT_SIZE, STACK_VECTOR_SIZE, BATCH_SIZE, return_sequences=True, input_shape=(MAX_SEQUENCE_LENGTH, len(chars)))
 
 model.add(neural_stack_layer)
 model.add(Activation('softmax'))
@@ -114,7 +116,7 @@ print 'Model compiled..'
 print 'Fitting..'
 res = model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=1, validation_split=0.25)
 
-X, Y = generate_sequences(lookup_table, 1, 50)
+X, Y = generate_sequences(lookup_table, 1, MAX_SEQUENCE_LENGTH)
 
 preds = model.predict(X)
 
