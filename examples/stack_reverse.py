@@ -1,6 +1,6 @@
 
-from keras.models import Sequential, slice_X
-from keras.layers.core import Activation, Dropout, TimeDistributedDense
+from keras.models import Sequential
+from keras.layers.core import Activation
 from keras.layers import NeuralStack, recurrent
 from keras.optimizers import RMSprop
 import numpy as np
@@ -45,7 +45,7 @@ def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
     for s in range(number_of_sequences):
 
         # have to take into account the start, stop and reverse chars, and divide the sequence by two so we can reverse
-        sequence_length = np.random.randint(10, high=(max_sequence_length-3)/2)
+        sequence_length = np.random.randint(3, high=(max_sequence_length-3)/2)
         sequence = np.random.randint(low=0, high=len(lookup_table.chars)-3, size=sequence_length)
 
         # the start, stop and reverse characters
@@ -72,12 +72,8 @@ def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
 
     return X, Y
 
-
-
 # Number of sequences in the test set to generate
-NUMBER_OF_SEQUENCES = 1000
-
-
+NUMBER_OF_SEQUENCES = 100000
 
 # This is the list of characters to  we will learn to reverse
 chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -86,7 +82,7 @@ chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 # | reverse character
 
 # This is the max sequence length plus the reversal, plus the start, stop and reverse characters
-MAX_SEQUENCE_LENGTH = 50
+MAX_SEQUENCE_LENGTH = 20
 
 RNN = recurrent.SimpleRNN
 CONTROLLER_OUTPUT_SIZE = 64
@@ -114,7 +110,7 @@ model.compile(loss='categorical_crossentropy', optimizer=rmsprop)
 print 'Model compiled..'
 
 print 'Fitting..'
-res = model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=100, validation_split=0.25)
+res = model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=1, validation_split=0.25)
 
 X, Y = generate_sequences(lookup_table, 1, MAX_SEQUENCE_LENGTH)
 
