@@ -500,13 +500,12 @@ class NeuralStack(Recurrent):
         input_shape = self.input_shape
         input_dim = input_shape[2]
         self.input_dim = input_dim
-        input_length = input_shape[1]
 
         # Assume the controller output dimensions are the same as the output dimensions of our stack
         self.controller_input_dim = self.stack_vector_size + self._input_shape[2]
         controller_input_shape = (self._input_shape[1], self.controller_input_dim)
 
-        self._controller = self._controller_class(self.controller_output_dim, weights=None, input_shape=controller_input_shape)
+        self._controller = self._controller_class(self.controller_output_dim, input_shape=controller_input_shape)
         self._controller_step = self._controller.step
 
         # Weights for the push, pop, vector and output

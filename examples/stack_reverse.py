@@ -53,8 +53,8 @@ def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
         reverse = 27 # |
         stop = 28 # }
 
-        stop_seq = np.zeros((sequence_length))*stop
-        start_seq = np.zeros((sequence_length))*start
+        stop_seq = np.ones((sequence_length))*stop
+        start_seq = np.ones((sequence_length))*start
 
         full_x_sequence = np.concatenate([[start],  sequence, [reverse],  stop_seq,       [stop]])
         full_y_sequence = np.concatenate([[start],  start_seq, [reverse], sequence[::-1], [stop]])
@@ -89,15 +89,15 @@ chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 MAX_SEQUENCE_LENGTH = 50
 
 RNN = recurrent.SimpleRNN
-CONTROLLER_OUTPUT_SIZE = len(chars)
-STACK_VECTOR_SIZE = len(chars)
+CONTROLLER_OUTPUT_SIZE = 64
+STACK_VECTOR_SIZE = 100
 OUTPUT_SIZE = len(chars)
 BATCH_SIZE = 10
 
 # Have to add the start, stop and reverse chars
 lookup_table = CharacterTable(chars, MAX_SEQUENCE_LENGTH)
 
-print 'Generating training data model...'
+print 'Generating training data...'
 X, Y = generate_sequences(lookup_table, NUMBER_OF_SEQUENCES, MAX_SEQUENCE_LENGTH)
 
 print 'Building model...'
@@ -114,7 +114,7 @@ model.compile(loss='categorical_crossentropy', optimizer=rmsprop)
 print 'Model compiled..'
 
 print 'Fitting..'
-res = model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=1, validation_split=0.25)
+res = model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=100, validation_split=0.25)
 
 X, Y = generate_sequences(lookup_table, 1, MAX_SEQUENCE_LENGTH)
 
