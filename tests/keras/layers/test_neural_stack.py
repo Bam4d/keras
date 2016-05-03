@@ -74,7 +74,7 @@ def test_compute_read():
     time_steps = 10
     input_dim = 3
     output_dim = 5
-    controller_output_dim = 5
+    controller_output_dim = 6
 
     step_number = 2
 
@@ -114,7 +114,7 @@ def test_neural_stack_step():
     time_steps = 10
     input_dim = 3
     output_dim = 5
-    controller_output_dim = 5
+    controller_output_dim = 6
 
     step_number = 3
 
@@ -134,7 +134,7 @@ def test_neural_stack_step():
 
 def test_reverse_cumalative_sum():
 
-    stack = NeuralStack(MockController, 5, 5, 3, 1, input_shape=(10, 4))
+    stack = NeuralStack(MockController, 5, 6, 3, 1, input_shape=(10, 4))
 
     seq = K.variable(np.array([[0.4,0.1,0.3],[0.5,0.4,1.0],[0.3,0.3,0.3]]))
     sum = stack._rev_cumsum(seq)
@@ -148,7 +148,7 @@ def test_full_step():
     input_dim = 4
 
     output_dim = 5
-    controller_output_dim = 5
+    controller_output_dim = 6
 
     stack = NeuralStack(SimpleRNN, controller_output_dim, output_dim, vector_size, batch_size, input_shape=(time_steps, input_dim))
     stack.step_count = K.variable(1, dtype=np.int32)
@@ -171,7 +171,7 @@ def test_neural_stack_with_controller():
     input_dim = 4
 
     output_dim = 5
-    controller_output_dim = 5
+    controller_output_dim = 6
 
     _runner(SimpleRNN, batch_size, vector_size, time_steps, input_dim, controller_output_dim, output_dim)
 
