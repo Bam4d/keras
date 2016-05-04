@@ -806,7 +806,7 @@ class NeuralStack(Recurrent):
         - [Learning to transduce with unbounded memory](http://arxiv.org/abs/1506.02516)
     '''
 
-    def __init__(self, controller_class, controller_output_dim, output_dim, stack_vector_size, bsz,
+    def __init__(self, controller_class, controller_output_dim, output_dim, stack_vector_size,
                  init='glorot_uniform', **kwargs):
         if K._BACKEND != 'theano':
             raise Exception('NeuralStack is currently unsupported in TensorFlow.')
@@ -819,34 +819,39 @@ class NeuralStack(Recurrent):
 
         self.stack_vector_size = stack_vector_size
 
-        self.bsz = bsz
-
         self._controller_class = controller_class
-
-        self._output_start = 0
-        self._output_end = self._output_start+output_dim
-        self._pop_start = self._output_end
-        self._pop_end = self._pop_start + 1
-        self._push_start = self._pop_end
-        self._push_end = self._push_start + 1
-        self._v_start = self._push_end
-        self._v_end = self._v_start + self.stack_vector_size
 
         self.output_dim = output_dim
         self.controller_output_dim = controller_output_dim
 
         super(NeuralStack, self).__init__(**kwargs)
 
-    def build(self):
-        input_shape = self.input_shape
+    def get_initial_states(self, x):
+        # build an all-zero tensor of shape (samples, output_dim)
+        initial_state = K.zeros_like(x)  # (samples, timesteps, input_dim)
+        initial_state = K.sum(initial_state, axis=1)  # (samples, input_dim)
+        reducer = K.zeros((self.input_dim, self.stack_vector_size))
+        initial_states = [K.dot(initial_state, reducer)]  # (samples, stack_vector_size)
+        initial_states.extend(self._controller.get_initial_states(x))
+        return initial_states
+
+    def get_constants(self, x):
+        constants = self._controller.get_constants(x)
+        return constants
+
+    def build(self, input_shape=None):
+        self.input_spec = [InputSpec(shape=input_shape)]
         input_dim = input_shape[2]
+        timesteps = input_shape[1]
+        batch_size = input_shape[0]
         self.input_dim = input_dim
 
         # Assume the controller output dimensions are the same as the output dimensions of our stack
-        self.controller_input_dim = self.stack_vector_size + self._input_shape[2]
-        controller_input_shape = (self._input_shape[1], self.controller_input_dim)
+        self.controller_input_dim = self.stack_vector_size + input_dim
+        controller_input_shape = (batch_size, timesteps, self.controller_input_dim)
 
         self._controller = self._controller_class(self.controller_output_dim, input_shape=controller_input_shape)
+        self._controller.build(controller_input_shape)
         self._controller_step = self._controller.step
 
         # Weights for the push, pop, vector and output
@@ -863,16 +868,17 @@ class NeuralStack(Recurrent):
         self.W_o = self.init((self.controller_output_dim, self.output_dim))
         self.b_o = self.init((self.output_dim,))
 
-        # the params for this layer are the params for the controller layer
-        self.params = [self.W_d, self.b_d, self.W_u, self.b_u, self.W_v, self.b_v, self.W_o, self.b_o] + self._controller.params
+        # the trainable_weights for this layer are the trainable_weights for the controller layer plus the weights from the stack output
+        self.trainable_weights = [self.W_d, self.b_d, self.W_u, self.b_u, self.W_v, self.b_v, self.W_o, self.b_o] + self._controller.trainable_weights
+
+        self.reset_stack(input_shape)
 
     def _rev_cumsum(self, seq):
         return K.cumsum(seq[::-1],axis=0)[::-1].T
 
     def _step(self, pop, push, vec):
-
         ncs = K.concatenate([self._rev_cumsum(self.strengths[self.stindex:self.step_count]),
-                                 K.zeros([self.bsz, 1])])
+                                 K.zeros_like(pop.T)])
 
         prev_strengths = self.strengths[:self.step_count]
         prev_vectors = self.vectors[:, :self.step_count]
@@ -888,20 +894,17 @@ class NeuralStack(Recurrent):
 
 
         new_ncs = K.concatenate([self._rev_cumsum(self.strengths[self.stindex:self.step_count]),
-                             K.zeros([self.bsz, 1])])
+                             K.zeros_like(pop.T)])
 
 
         score = K.min([self.strengths[:self.step_count], K.transpose(K.relu(1-new_ncs))], axis=0)
 
-        # Would love to replace this with something parallel, this is essentially a batched_dot in numpy
-        r, l = theano.scan(fn=lambda A, B: K.dot(A, B),
-                  outputs_info=None,
-                  sequences=[K.transpose(score), K.transpose(self.vectors[:, :self.step_count])],
-                  n_steps=self.bsz)
+
+        r = K.batch_dot(score.T, self.vectors[:, :self.step_count].T, axes=1)
 
         return self.vectors[:, :self.step_count], self.strengths[:self.step_count], K.transpose(r)
 
-    def full_step(self, x, states):
+    def step(self, x, states):
         ''' The entire step including the controller and the neural stack
         :param states:
         :return:
@@ -922,40 +925,13 @@ class NeuralStack(Recurrent):
         # Should update this so we don;t have to transpose these
         _, _, r = self._step(u.T, d.T, v.T)
 
-        states.insert(0, r.T)
+        states.insert(0,r.T)
 
         return output, states
 
-    def _get_initial_controller_states(self, samples):
-        # build an all-zero tensor of shape (samples, output_dim)
-        initial_state = K.zeros((samples, self.controller_input_dim), name='initial_state')  # (samples, input_dim)
-        reducer = K.zeros((self.controller_input_dim, self.controller_output_dim), name='reducer')
-        initial_state = K.dot(initial_state, reducer)  # (samples, output_dim)
-        initial_states = [initial_state for _ in range(len(self._controller.states))]
-        return initial_states
-
-    def reset_stack(self):
-        input_length = self.input_shape[1]
+    def reset_stack(self, input_shape):
+        input_length = input_shape[1]
+        batch_size = input_shape[0]
         self.step_count = K.variable(1, dtype=np.int32)
-        self.vectors = K.variable(np.zeros([self.stack_vector_size, input_length, self.bsz]))
-        self.strengths = K.variable(np.zeros([input_length, self.bsz]))
-
-    def get_output(self, train=False):
-        X = self.get_input(train)
-
-        # Have to reset the stack here, could try to make this stateful?
-        self.reset_stack()
-
-        #input_shape
-        initial_states = self._get_initial_controller_states(self.bsz)
-        initial_r = K.zeros((self.bsz, self.stack_vector_size), name='initial_r')
-        initial_states.insert(0, initial_r)
-
-        last_output, outputs, states = K.rnn(self.full_step, X, initial_states=initial_states, go_backwards=False, masking=False)
-
-        if self.return_sequences:
-            return outputs
-        else:
-            return last_output
-
-        return outputs
+        self.vectors = K.variable(np.zeros((self.stack_vector_size, input_length, batch_size)))
+        self.strengths = K.variable(np.zeros((input_length, batch_size)))
