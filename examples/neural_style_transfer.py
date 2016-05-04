@@ -7,11 +7,11 @@ and make sure the variable `weights_path` in this script matches the location of
 
 Run the script with:
 ```
-python neural_style.py path_to_your_base_image.jpg path_to_your_reference.jpg prefix_for_results
+python neural_style_transfer.py path_to_your_base_image.jpg path_to_your_reference.jpg prefix_for_results
 ```
 e.g.:
 ```
-python neural_style.py img/tuebingen.jpg img/starry_night.jpg results/my_result
+python neural_style_transfer.py img/tuebingen.jpg img/starry_night.jpg results/my_result
 ```
 
 It is preferrable to run this script on GPU, for speed.
@@ -111,8 +111,8 @@ input_tensor = K.concatenate([base_image,
                               combination_image], axis=0)
 
 # build the VGG16 network with our 3 images as input
-first_layer = ZeroPadding2D((1, 1), input_shape=(3, img_width, img_height))
-first_layer.input = input_tensor
+first_layer = ZeroPadding2D((1, 1))
+first_layer.set_input(input_tensor, shape=(3, 3, img_width, img_height))
 
 model = Sequential()
 model.add(first_layer)
@@ -168,7 +168,7 @@ f.close()
 print('Model loaded.')
 
 # get the symbolic outputs of each "key" layer (we gave them unique names).
-outputs_dict = dict([(layer.name, layer.get_output()) for layer in model.layers])
+outputs_dict = dict([(layer.name, layer.output) for layer in model.layers])
 
 # compute the neural style loss
 # first we need to define 4 util functions

@@ -14,7 +14,7 @@ from __future__ import print_function
 from keras.models import Sequential
 from keras.layers.core import Dense, Activation, Dropout
 from keras.layers.recurrent import LSTM
-from keras.datasets.data_utils import get_file
+from keras.utils.data_utils import get_file
 import numpy as np
 import random
 import sys
@@ -29,7 +29,7 @@ char_indices = dict((c, i) for i, c in enumerate(chars))
 indices_char = dict((i, c) for i, c in enumerate(chars))
 
 # cut the text in semi-redundant sequences of maxlen characters
-maxlen = 20
+maxlen = 40
 step = 3
 sentences = []
 next_chars = []

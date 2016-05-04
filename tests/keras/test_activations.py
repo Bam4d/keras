@@ -32,6 +32,14 @@ def test_softmax():
     assert_allclose(result, expected, rtol=1e-05)
 
 
+def test_time_distributed_softmax():
+    x = K.placeholder(shape=(1, 1, 5))
+    f = K.function([x], [activations.softmax(x)])
+    test_values = get_standard_values()
+    test_values = np.reshape(test_values, (1, 1, np.size(test_values)))
+    f([test_values])[0]
+
+
 def test_softplus():
     '''
     Test using a reference softplus implementation
@@ -45,6 +53,22 @@ def test_softplus():
 
     result = f([test_values])[0]
     expected = softplus(test_values)
+    assert_allclose(result, expected, rtol=1e-05)
+
+
+def test_softsign():
+    '''
+    Test using a reference softsign implementation
+    '''
+    def softsign(x):
+        return np.divide(x, np.ones_like(x) + np.absolute(x))
+
+    x = K.placeholder(ndim=2)
+    f = K.function([x],  [activations.softsign(x)])
+    test_values = get_standard_values()
+
+    result = f([test_values])[0]
+    expected = softsign(test_values)
     assert_allclose(result, expected, rtol=1e-05)
 
 

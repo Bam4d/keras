@@ -1,30 +1,38 @@
 # Keras FAQ: Frequently Asked Keras Questions
 
-[How can I run Keras on GPU?](#how-can-i-run-keras-on-gpu)
-
-[How can I save a Keras model?](#how-can-i-save-a-keras-model)
-
-[Why is the training loss much higher than the testing loss?](#why-is-the-training-loss-much-higher-than-the-testing-loss)
-
-[How can I visualize the output of an intermediate layer?](#how-can-i-visualize-the-output-of-an-intermediate-layer)
-
-[Isn't there a bug with Merge or Graph related to input concatenation?](#isnt-there-a-bug-with-merge-or-graph-related-to-input-concatenation)
-
-[How can I use Keras with datasets that don't fit in memory?](#how-can-i-use-keras-with-datasets-that-dont-fit-in-memory)
-
-[How can I interrupt training when the validation loss isn't decreasing anymore?](#how-can-i-interrupt-training-when-the-validation-loss-isnt-decreasing-anymore)
-
-[How is the validation split computed?](#how-is-the-validation-split-computed)
-
-[Is the data shuffled during training?](#is-the-data-shuffled-during-training)
-
-[How can I record the training / validation loss / accuracy at each epoch?](#how-can-i-record-the-training-validation-loss-accuracy-at-each-epoch)
-
-[How can I use stateful RNNs?](#how-can-i-use-stateful-rnns)
+- [How should I cite Keras?](#how-should-i-cite-keras)
+- [How can I run Keras on GPU?](#how-can-i-run-keras-on-gpu)
+- [How can I save a Keras model?](#how-can-i-save-a-keras-model)
+- [Why is the training loss much higher than the testing loss?](#why-is-the-training-loss-much-higher-than-the-testing-loss)
+- [How can I visualize the output of an intermediate layer?](#how-can-i-visualize-the-output-of-an-intermediate-layer)
+- [How can I use Keras with datasets that don't fit in memory?](#how-can-i-use-keras-with-datasets-that-dont-fit-in-memory)
+- [How can I interrupt training when the validation loss isn't decreasing anymore?](#how-can-i-interrupt-training-when-the-validation-loss-isnt-decreasing-anymore)
+- [How is the validation split computed?](#how-is-the-validation-split-computed)
+- [Is the data shuffled during training?](#is-the-data-shuffled-during-training)
+- [How can I record the training / validation loss / accuracy at each epoch?](#how-can-i-record-the-training-validation-loss-accuracy-at-each-epoch)
+- [How can I use stateful RNNs?](#how-can-i-use-stateful-rnns)
 
 ---
 
+### How should I cite Keras?
+
+Please cite Keras in your publications if it helps your research. Here is an example BibTeX entry:
+
+```
+@misc{chollet2015keras,
+  author = {Chollet, François},
+  title = {Keras},
+  year = {2015},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/fchollet/keras}}
+}
+```
+
 ### How can I run Keras on GPU?
+
+If you are running on the TensorFlow backend, your code will automatically run on GPU if any available GPU is detected.
+If you are running on the Theano backend, you can use one of the following methods:
 
 Method 1: use Theano flags.
 ```bash
@@ -69,7 +77,10 @@ model = model_from_json(json_string)
 model = model_from_yaml(yaml_string)
 ```
 
-If you need to save the weights of a model, you can do so in HDF5:
+If you need to save the weights of a model, you can do so in HDF5 with the code below.
+
+Note that you will first need to install HDF5 and the Python library h5py, which do not come bundled with Keras.
+
 ```python
 model.save_weights('my_model_weights.h5')
 ```
@@ -91,6 +102,11 @@ model = model_from_json(open('my_model_architecture.json').read())
 model.load_weights('my_model_weights.h5')
 ```
 
+Finally, before it can be used, the model shall be compiled.
+```python
+model.compile(optimizer='adagrad', loss='mse')
+```
+
 ---
 
 ### Why is the training loss much higher than the testing loss?
@@ -103,39 +119,44 @@ Besides, the training loss is the average of the losses over each batch of train
 
 ### How can I visualize the output of an intermediate layer?
 
-You can build a Theano function that will return the output of a certain layer given a certain input, for example:
+You can build a Keras function that will return the output of a certain layer given a certain input, for example:
 
 ```python
+from keras import backend as K
+
 # with a Sequential model
-get_3rd_layer_output = theano.function([model.layers[0].input],
-                                       model.layers[3].get_output(train=False))
-layer_output = get_3rd_layer_output(X)
-
-# with a Graph model
-get_conv_layer_output = theano.function([model.inputs[i].input for i in model.input_order],
-                                        model.nodes['conv'].get_output(train=False),
-                                        on_unused_input='ignore')
-conv_output = get_conv_layer_output([input_data_dict[i] for i in model.input_order])
+get_3rd_layer_output = K.function([model.layers[0].input],
+                                  [model.layers[3].output])
+layer_output = get_3rd_layer_output([X])[0]
 ```
 
----
+Similarly, you could build a Theano and TensorFlow function directly.
 
-### Isn't there a bug with Merge or Graph related to input concatenation?
+Note that if your model has a different behavior in training and testing phase (e.g. if it uses `Dropout`, `BatchNormalization`, etc.), you will need
+to pass the learning phase flag to your function:
 
-Yes, there was a known bug with tensor concatenation in Theano that was fixed early 2015.
-Please upgrade to the latest version of Theano:
+```python
+get_3rd_layer_output = K.function([model.layers[0].input, K.learning_phase()],
+                                  [model.layers[3].output])
 
-```bash
-sudo pip install git+git://github.com/Theano/Theano.git
+# output in test mode = 0
+layer_output = get_3rd_layer_output([X, 0])[0]
+
+# output in train mode = 1
+layer_output = get_3rd_layer_output([X, 1])[0]
 ```
+
+Another more flexible way of getting output from intermediate layers is to use the [functional API](/getting-started/functional-api-guide).
 
 ---
 
 ### How can I use Keras with datasets that don't fit in memory?
 
-You can do batch training using `model.train_on_batch(X, y)` and `model.test_on_batch(X, y)`. See the [models documentation](models.md).
+You can do batch training using `model.train_on_batch(X, y)` and `model.test_on_batch(X, y)`. See the [models documentation](/models/sequential).
 
-You can also see batch training in action in our [CIFAR10 example](https://github.com/fchollet/keras/blob/master/examples/cifar10_cnn.py).
+Alternatively, you can write a generator that yields batches of training data and use the method `model.fit_generator(data_generator, samples_per_epoch, nb_epoch)`.
+
+You can see batch training in action in our [CIFAR10 example](https://github.com/fchollet/keras/blob/master/examples/cifar10_cnn.py).
 
 ---
 
@@ -149,7 +170,7 @@ early_stopping = EarlyStopping(monitor='val_loss', patience=2)
 model.fit(X, y, validation_split=0.2, callbacks=[early_stopping])
 ```
 
-Find out more in the [callbacks documentation](callbacks.md).
+Find out more in the [callbacks documentation](/callbacks).
 
 ---
 
@@ -164,14 +185,14 @@ If you set the `validation_split` argument in `model.fit` to e.g. 0.1, then the 
 
 Yes, if the `shuffle` argument in `model.fit` is set to `True` (which is the default), the training data will be randomly shuffled at each epoch.
 
-Validation data isn't shuffled.
+Validation data is never shuffled.
 
 ---
 
 
 ### How can I record the training / validation loss / accuracy at each epoch?
 
-The `model.fit` method returns an `History` callback, which has a `history` attribute containing the lists of successive losses / accuracies.
+The `model.fit` method returns an `History` callback, which has a `history` attribute containing the lists of successive losses and other metrics.
 
 ```python
 hist = model.fit(X, y, validation_split=0.2)
