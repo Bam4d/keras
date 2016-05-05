@@ -881,24 +881,22 @@ class NeuralStack(Recurrent):
                                  K.zeros((1))])
 
         prev_strengths = self.strengths[:self.step_count]
-        prev_vectors = self.vectors[:, :self.step_count]
+
         # Have to implicitly use theano here
         import theano
         import theano.tensor as T
 
         updated_strengths = K.relu(prev_strengths-K.transpose(K.relu(K.repeat_elements(pop, self.step_count, 0) - ncs)))
 
+        self.vectors = T.set_subtensor(self.vectors[:, self.step_count], vec)
         self.step_count += 1
-        self.strengths = T.set_subtensor(self.strengths[:self.step_count], K.concatenate([updated_strengths, push], axis=0))
-        self.vectors = T.set_subtensor(self.vectors[:, :self.step_count], K.concatenate([prev_vectors, vec]))
 
+        self.strengths = T.set_subtensor(self.strengths[:self.step_count], K.concatenate([updated_strengths, push], axis=0))
 
         new_ncs = K.concatenate([self._rev_cumsum(self.strengths[self.stindex:self.step_count]),
                              K.zeros((1))])
 
-
         score = K.min([self.strengths[:self.step_count], K.transpose(K.relu(1-new_ncs))], axis=0)
-
 
         r = K.dot(score.T, self.vectors[:, :self.step_count].T)
 
