@@ -855,10 +855,10 @@ class NeuralStack(Recurrent):
         self._controller_step = self._controller.step
 
         # Weights for the push, pop, vector and output
-        self.W_d = self.init((self.controller_output_dim, 1))
+        self.W_d = self.init((self.controller_output_dim,))
         self.b_d = self.init((1,))
 
-        self.W_u = self.init((self.controller_output_dim, 1))
+        self.W_u = self.init((self.controller_output_dim,))
         # Pop bias initialization starting at -1 as described in the paper
         self.b_u = K.ones((1,))
 
@@ -878,7 +878,7 @@ class NeuralStack(Recurrent):
 
     def _step(self, pop, push, vec):
         ncs = K.concatenate([self._rev_cumsum(self.strengths[self.stindex:self.step_count]),
-                                 K.zeros_like(pop.T)])
+                                 K.zeros((1))])
 
         prev_strengths = self.strengths[:self.step_count]
         prev_vectors = self.vectors[:, :self.step_count]
@@ -886,21 +886,21 @@ class NeuralStack(Recurrent):
         import theano
         import theano.tensor as T
 
-        updated_strengths = K.relu(prev_strengths-K.transpose(K.relu(K.repeat_elements(K.transpose(pop), self.step_count, 1) - ncs)))
+        updated_strengths = K.relu(prev_strengths-K.transpose(K.relu(K.repeat_elements(pop, self.step_count, 0) - ncs)))
 
         self.step_count += 1
         self.strengths = T.set_subtensor(self.strengths[:self.step_count], K.concatenate([updated_strengths, push], axis=0))
-        self.vectors = T.set_subtensor(self.vectors[:, :self.step_count], K.concatenate([prev_vectors, K.expand_dims(vec, dim=1)], axis=1))
+        self.vectors = T.set_subtensor(self.vectors[:, :self.step_count], K.concatenate([prev_vectors, vec]))
 
 
         new_ncs = K.concatenate([self._rev_cumsum(self.strengths[self.stindex:self.step_count]),
-                             K.zeros_like(pop.T)])
+                             K.zeros((1))])
 
 
         score = K.min([self.strengths[:self.step_count], K.transpose(K.relu(1-new_ncs))], axis=0)
 
 
-        r = K.batch_dot(score.T, self.vectors[:, :self.step_count].T, axes=1)
+        r = K.dot(score.T, self.vectors[:, :self.step_count].T)
 
         return self.vectors[:, :self.step_count], self.strengths[:self.step_count], K.transpose(r)
 
@@ -931,7 +931,6 @@ class NeuralStack(Recurrent):
 
     def reset_stack(self, input_shape):
         input_length = input_shape[1]
-        batch_size = input_shape[0]
         self.step_count = K.variable(1, dtype=np.int32)
-        self.vectors = K.variable(np.zeros((self.stack_vector_size, input_length, batch_size)))
-        self.strengths = K.variable(np.zeros((input_length, batch_size)))
+        self.vectors = K.variable(np.zeros((self.stack_vector_size, input_length)))
+        self.strengths = K.variable(np.zeros((input_length)))

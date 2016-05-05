@@ -73,7 +73,7 @@ def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
     return X, Y
 
 # Number of sequences in the test set to generate
-NUMBER_OF_SEQUENCES = 100000
+NUMBER_OF_SEQUENCES = 100
 
 # This is the list of characters to  we will learn to reverse
 chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -99,7 +99,7 @@ X, Y = generate_sequences(lookup_table, NUMBER_OF_SEQUENCES, MAX_SEQUENCE_LENGTH
 print 'Building model...'
 model = Sequential()
 
-neural_stack_layer = NeuralStack(RNN, CONTROLLER_OUTPUT_SIZE, OUTPUT_SIZE, STACK_VECTOR_SIZE, BATCH_SIZE, return_sequences=True, input_shape=(MAX_SEQUENCE_LENGTH, len(chars)))
+neural_stack_layer = NeuralStack(RNN, CONTROLLER_OUTPUT_SIZE, OUTPUT_SIZE, STACK_VECTOR_SIZE, return_sequences=True, input_shape=(MAX_SEQUENCE_LENGTH, len(chars)))
 
 model.add(neural_stack_layer)
 model.add(Activation('softmax'))
