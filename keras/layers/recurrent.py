@@ -837,19 +837,13 @@ class NeuralStack(Recurrent):
         self.controller_input_shape = (self.batch_size, timesteps, self.controller_input_dim)
 
         self._controller = self._controller_class(self.controller_output_dim, input_shape=self.controller_input_shape, consume_less='mem')
-        #self._controller(controller_input_shape)
         self._controller_step = self._controller.step
 
         super(NeuralStack, self).__init__(**kwargs)
 
     def get_initial_states(self, x):
-        # build an all-zero tensor of shape (samples, output_dim)
-        initial_state = K.zeros_like(x)  # (samples, timesteps, input_dim)
-        initial_state = K.sum(initial_state, axis=1)  # (samples, input_dim)
-        reducer = K.zeros((self.input_dim, self.stack_vector_size))
-        initial_states = [K.dot(initial_state, reducer)]  # (samples, stack_vector_size)
-        initial_states.extend(self._controller.get_initial_states(x))
-        return initial_states
+        initial_r = K.zeros((self.batch_size, self.stack_vector_size))  # (samples, stack_vector_size)
+        return [initial_r] + self._controller.get_initial_states(x)
 
     def get_constants(self, x):
         constants = self._controller.get_constants(x)
@@ -896,7 +890,6 @@ class NeuralStack(Recurrent):
         prev_strengths = self.strengths[:, :self.step_count]
 
         # Have to implicitly use theano here
-        import theano
         import theano.tensor as T
 
         updated_strengths = K.relu(prev_strengths-K.relu(K.repeat_elements(pop.T, self.step_count, 0) - ncs))
@@ -923,7 +916,7 @@ class NeuralStack(Recurrent):
 
         prev_r = states[0]
         states = states[1:]
-        input = K.concatenate([x, prev_r])
+        input = K.concatenate([x, prev_r.T])
 
         controller_output, states = self._controller_step(input, states)
 
