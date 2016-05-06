@@ -815,6 +815,14 @@ class NeuralStack(Recurrent):
         # starting at one and at zero
         self.init = initializations.get(init)
 
+        if 'batch_input_shape' in kwargs:
+            self.batch_size = kwargs['batch_input_shape'][0]
+        else:
+            raise Exception('batch input shape must be set explicity with neural stacks.')
+
+        timesteps = kwargs['batch_input_shape'][1]
+        input_dim = kwargs['batch_input_shape'][2]
+
         self.stindex = 1
 
         self.stack_vector_size = stack_vector_size
@@ -823,6 +831,14 @@ class NeuralStack(Recurrent):
 
         self.output_dim = output_dim
         self.controller_output_dim = controller_output_dim
+
+        # Assume the controller output dimensions are the same as the output dimensions of our stack
+        self.controller_input_dim = self.stack_vector_size + input_dim
+        self.controller_input_shape = (self.batch_size, timesteps, self.controller_input_dim)
+
+        self._controller = self._controller_class(self.controller_output_dim, input_shape=self.controller_input_shape, consume_less='mem')
+        #self._controller(controller_input_shape)
+        self._controller_step = self._controller.step
 
         super(NeuralStack, self).__init__(**kwargs)
 
@@ -839,34 +855,31 @@ class NeuralStack(Recurrent):
         constants = self._controller.get_constants(x)
         return constants
 
+    # have to build the controller before the stack gets built
+    def __call__(self, x, mask=None):
+
+        # Build the controller layer logic
+        self._controller.build(self.controller_input_shape)
+        return super(NeuralStack, self).__call__(x, mask)
+
     def build(self, input_shape=None):
         self.input_spec = [InputSpec(shape=input_shape)]
         input_dim = input_shape[2]
-        timesteps = input_shape[1]
-        batch_size = input_shape[0]
         self.input_dim = input_dim
 
-        # Assume the controller output dimensions are the same as the output dimensions of our stack
-        self.controller_input_dim = self.stack_vector_size + input_dim
-        controller_input_shape = (batch_size, timesteps, self.controller_input_dim)
-
-        self._controller = self._controller_class(self.controller_output_dim, input_shape=controller_input_shape)
-        self._controller.build(controller_input_shape)
-        self._controller_step = self._controller.step
-
         # Weights for the push, pop, vector and output
-        self.W_d = self.init((self.controller_output_dim,))
-        self.b_d = self.init((1,))
+        self.W_d = self.init((self.controller_output_dim,), name='{}_W_d'.format(self.name))
+        self.b_d = self.init((1,), name='{}_b_d'.format(self.name))
 
-        self.W_u = self.init((self.controller_output_dim,))
+        self.W_u = self.init((self.controller_output_dim,), name='{}_W_u'.format(self.name))
         # Pop bias initialization starting at -1 as described in the paper
-        self.b_u = K.ones((1,))
+        self.b_u = K.ones((1,), name='{}_b_u'.format(self.name))
 
-        self.W_v = self.init((self.controller_output_dim, self.stack_vector_size))
-        self.b_v = self.init((self.stack_vector_size,))
+        self.W_v = self.init((self.controller_output_dim, self.stack_vector_size), name='{}_W_v'.format(self.name))
+        self.b_v = self.init((self.stack_vector_size,), name='{}_b_v'.format(self.name))
 
-        self.W_o = self.init((self.controller_output_dim, self.output_dim))
-        self.b_o = self.init((self.output_dim,))
+        self.W_o = self.init((self.controller_output_dim, self.output_dim), name='{}_W_o'.format(self.name))
+        self.b_o = self.init((self.output_dim,), name='{}_b_o'.format(self.name))
 
         # the trainable_weights for this layer are the trainable_weights for the controller layer plus the weights from the stack output
         self.trainable_weights = [self.W_d, self.b_d, self.W_u, self.b_u, self.W_v, self.b_v, self.W_o, self.b_o] + self._controller.trainable_weights
@@ -874,33 +887,33 @@ class NeuralStack(Recurrent):
         self.reset_stack(input_shape)
 
     def _rev_cumsum(self, seq):
-        return K.cumsum(seq[::-1],axis=0)[::-1].T
+        return K.cumsum(seq[::-1],axis=0)[::-1]
 
     def _step(self, pop, push, vec):
-        ncs = K.concatenate([self._rev_cumsum(self.strengths[self.stindex:self.step_count]),
-                                 K.zeros((1))])
+        ncs = K.concatenate([self._rev_cumsum(self.strengths[:, self.stindex:self.step_count]),
+                                 K.zeros((self.batch_size, 1))])
 
-        prev_strengths = self.strengths[:self.step_count]
+        prev_strengths = self.strengths[:, :self.step_count]
 
         # Have to implicitly use theano here
         import theano
         import theano.tensor as T
 
-        updated_strengths = K.relu(prev_strengths-K.transpose(K.relu(K.repeat_elements(pop, self.step_count, 0) - ncs)))
+        updated_strengths = K.relu(prev_strengths-K.relu(K.repeat_elements(pop.T, self.step_count, 0) - ncs))
 
         self.vectors = T.set_subtensor(self.vectors[:, self.step_count], vec)
         self.step_count += 1
 
-        self.strengths = T.set_subtensor(self.strengths[:self.step_count], K.concatenate([updated_strengths, push], axis=0))
+        self.strengths = T.set_subtensor(self.strengths[:, :self.step_count], K.concatenate([updated_strengths, push], axis=1))
 
-        new_ncs = K.concatenate([self._rev_cumsum(self.strengths[self.stindex:self.step_count]),
-                             K.zeros((1))])
+        new_ncs = K.concatenate([self._rev_cumsum(self.strengths[:, self.stindex:self.step_count].T).T,
+                             K.zeros((self.batch_size, 1))])
 
-        score = K.min([self.strengths[:self.step_count], K.transpose(K.relu(1-new_ncs))], axis=0)
+        score = K.min([self.strengths[:, :self.step_count], K.relu(1-new_ncs)], axis=0)
 
-        r = K.dot(score.T, self.vectors[:, :self.step_count].T)
+        r = K.batch_dot(score, self.vectors[:, :self.step_count, :])
 
-        return self.vectors[:, :self.step_count], self.strengths[:self.step_count], K.transpose(r)
+        return self.vectors[:, :self.step_count], self.strengths[: ,:self.step_count], r
 
     def step(self, x, states):
         ''' The entire step including the controller and the neural stack
@@ -914,8 +927,8 @@ class NeuralStack(Recurrent):
 
         controller_output, states = self._controller_step(input, states)
 
-        u = K.sigmoid(K.dot(controller_output, self.W_u) + self.b_u)
-        d = K.sigmoid(K.dot(controller_output ,self.W_d) + self.b_d)
+        u = K.expand_dims(K.sigmoid(K.dot(controller_output, self.W_u) + self.b_u))
+        d = K.expand_dims(K.sigmoid(K.dot(controller_output ,self.W_d) + self.b_d))
         v = K.tanh(K.dot(controller_output, self.W_v) + self.b_v)
 
         output = K.tanh(K.dot(controller_output, self.W_o) + self.b_o)
@@ -930,5 +943,5 @@ class NeuralStack(Recurrent):
     def reset_stack(self, input_shape):
         input_length = input_shape[1]
         self.step_count = K.variable(1, dtype=np.int32)
-        self.vectors = K.variable(np.zeros((self.stack_vector_size, input_length)))
-        self.strengths = K.variable(np.zeros((input_length)))
+        self.vectors = K.variable(np.zeros((self.batch_size, input_length, self.stack_vector_size)))
+        self.strengths = K.variable(np.zeros((self.batch_size, input_length)))

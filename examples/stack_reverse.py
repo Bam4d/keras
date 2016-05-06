@@ -99,7 +99,7 @@ X, Y = generate_sequences(lookup_table, NUMBER_OF_SEQUENCES, MAX_SEQUENCE_LENGTH
 print 'Building model...'
 model = Sequential()
 
-neural_stack_layer = NeuralStack(RNN, CONTROLLER_OUTPUT_SIZE, OUTPUT_SIZE, STACK_VECTOR_SIZE, return_sequences=True, input_shape=(MAX_SEQUENCE_LENGTH, len(chars)))
+neural_stack_layer = NeuralStack(RNN, CONTROLLER_OUTPUT_SIZE, OUTPUT_SIZE, STACK_VECTOR_SIZE, return_sequences=True, batch_input_shape=(BATCH_SIZE, MAX_SEQUENCE_LENGTH, len(chars)))
 
 model.add(neural_stack_layer)
 model.add(Activation('softmax'))
