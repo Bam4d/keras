@@ -28,11 +28,15 @@ def layer_test(layer_cls, vector_size, controller_output_dim, output_dim, kwargs
         expected_output_dtype = input_dtype
 
     # instantiation
-    layer = NeuralStack(layer_cls, controller_output_dim, output_dim, vector_size, return_sequences=True, batch_input_shape=input_shape, **kwargs)
+    layer = NeuralStack(layer_cls, controller_output_dim, output_dim, vector_size, return_sequences=True,
+                        batch_input_shape=input_shape, **kwargs)
 
     # test get_weights , set_weights
-    weights = layer.get_weights()
-    layer.set_weights(weights)
+    #weights = layer.get_weights()
+    #layer.set_weights(weights)
+
+    theano.config.compute_test_value = 'warn'
+
 
     # test and instantiation from weights
     # if 'weights' in inspect.getargspec(layer_cls.__init__):
@@ -40,7 +44,8 @@ def layer_test(layer_cls, vector_size, controller_output_dim, output_dim, kwargs
     #     layer = layer_cls(**kwargs)
 
     # test in functional API
-    x = Input(shape=input_shape[1:], dtype=input_dtype)
+    x = Input(shape=input_shape[1:], dtype=input_dtype, name="input_1")
+    x.tag.test_value = np.random.rand(*input_shape).astype(input_dtype)
     y = layer(x)
     assert K.dtype(y) == expected_output_dtype
 
@@ -91,7 +96,7 @@ class MockController():
 
     def step(self, x, states):
         pass
-#
+
 @pytest.mark.skipif(K._BACKEND == 'tensorflow',
                     reason='currently not working with TensorFlow')
 def test_compute_read():

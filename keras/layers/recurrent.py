@@ -836,14 +836,18 @@ class NeuralStack(Recurrent):
         self.controller_input_dim = self.stack_vector_size + input_dim
         self.controller_input_shape = (self.batch_size, timesteps, self.controller_input_dim)
 
-        self._controller = self._controller_class(self.controller_output_dim, input_shape=self.controller_input_shape, consume_less='mem')
+        self._controller = self._controller_class(self.controller_output_dim,
+                                                  batch_input_shape=self.controller_input_shape, consume_less='mem')
         self._controller_step = self._controller.step
 
         super(NeuralStack, self).__init__(**kwargs)
 
     def get_initial_states(self, x):
-        initial_r = K.zeros((self.batch_size, self.stack_vector_size))  # (samples, stack_vector_size)
-        return [initial_r] + self._controller.get_initial_states(x)
+        initial_r = K.zeros_like(x)  # (samples, timesteps, input_dim)
+        initial_r = K.sum(initial_r, axis=1)  # (samples, input_dim)
+        reducer = K.zeros((self.input_dim, self.stack_vector_size))
+        initial_r = K.dot(initial_r, reducer)
+        return [initial_r] + self._controller.get_initial_states(K.zeros(self.controller_input_shape))
 
     def get_constants(self, x):
         constants = self._controller.get_constants(x)
@@ -854,6 +858,7 @@ class NeuralStack(Recurrent):
 
         # Build the controller layer logic
         self._controller.build(self.controller_input_shape)
+        self._controller.built=True
         return super(NeuralStack, self).__call__(x, mask)
 
     def build(self, input_shape=None):
@@ -881,7 +886,7 @@ class NeuralStack(Recurrent):
         self.reset_stack(input_shape)
 
     def _rev_cumsum(self, seq):
-        return K.cumsum(seq[::-1],axis=0)[::-1]
+        return K.cumsum(seq[::-1], axis=0)[::-1]
 
     def _step(self, pop, push, vec):
         ncs = K.concatenate([self._rev_cumsum(self.strengths[:, self.stindex:self.step_count]),
@@ -892,7 +897,7 @@ class NeuralStack(Recurrent):
         # Have to implicitly use theano here
         import theano.tensor as T
 
-        updated_strengths = K.relu(prev_strengths-K.relu(K.repeat_elements(pop.T, self.step_count, 0) - ncs))
+        updated_strengths = K.relu(prev_strengths-K.relu(K.repeat_elements(pop, self.step_count, 1) - ncs))
 
         self.vectors = T.set_subtensor(self.vectors[:, self.step_count], vec)
         self.step_count += 1
@@ -906,7 +911,7 @@ class NeuralStack(Recurrent):
 
         r = K.batch_dot(score, self.vectors[:, :self.step_count, :])
 
-        return self.vectors[:, :self.step_count], self.strengths[: ,:self.step_count], r
+        return self.vectors[:, :self.step_count], self.strengths[:, :self.step_count], r
 
     def step(self, x, states):
         ''' The entire step including the controller and the neural stack
@@ -915,23 +920,23 @@ class NeuralStack(Recurrent):
         '''
 
         prev_r = states[0]
-        states = states[1:]
-        input = K.concatenate([x, prev_r.T])
+        controller_states = states[1:]
+        controller_input = K.concatenate([x, prev_r], axis=1)
 
-        controller_output, states = self._controller_step(input, states)
+        controller_output, controller_output_states = self._controller_step(controller_input, controller_states)
 
-        u = K.expand_dims(K.sigmoid(K.dot(controller_output, self.W_u) + self.b_u))
-        d = K.expand_dims(K.sigmoid(K.dot(controller_output ,self.W_d) + self.b_d))
+        u = K.sigmoid(K.expand_dims(K.dot(controller_output, self.W_u)) + self.b_u)
+        d = K.sigmoid(K.expand_dims(K.dot(controller_output, self.W_d)) + self.b_d)
         v = K.tanh(K.dot(controller_output, self.W_v) + self.b_v)
 
         output = K.tanh(K.dot(controller_output, self.W_o) + self.b_o)
 
         # Should update this so we don;t have to transpose these
-        _, _, r = self._step(u.T, d.T, v.T)
+        _, _, r = self._step(u, d, v)
 
-        states.insert(0,r.T)
+        controller_output_states.insert(0, r)
 
-        return output, states
+        return output, controller_output_states
 
     def reset_stack(self, input_shape):
         input_length = input_shape[1]

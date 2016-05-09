@@ -3,6 +3,8 @@ from keras.models import Sequential
 from keras.layers.core import Activation
 from keras.layers import NeuralStack, recurrent
 from keras.optimizers import RMSprop
+from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import average_precision_score
 import numpy as np
 
 class CharacterTable(object):
@@ -46,6 +48,7 @@ def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
 
         # have to take into account the start, stop and reverse chars, and divide the sequence by two so we can reverse
         sequence_length = np.random.randint(3, high=(max_sequence_length-3)/2)
+        #sequence_length = (max_sequence_length-3)/2
         sequence = np.random.randint(low=0, high=len(lookup_table.chars)-3, size=sequence_length)
 
         # the start, stop and reverse characters
@@ -73,7 +76,7 @@ def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
     return X, Y
 
 # Number of sequences in the test set to generate
-NUMBER_OF_SEQUENCES = 100
+NUMBER_OF_SEQUENCES = 100000
 
 # This is the list of characters to  we will learn to reverse
 chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -85,7 +88,7 @@ chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 MAX_SEQUENCE_LENGTH = 20
 
 RNN = recurrent.SimpleRNN
-CONTROLLER_OUTPUT_SIZE = 64
+CONTROLLER_OUTPUT_SIZE = 100
 STACK_VECTOR_SIZE = 100
 OUTPUT_SIZE = len(chars)
 BATCH_SIZE = 10
@@ -99,21 +102,26 @@ X, Y = generate_sequences(lookup_table, NUMBER_OF_SEQUENCES, MAX_SEQUENCE_LENGTH
 print 'Building model...'
 model = Sequential()
 
-neural_stack_layer = NeuralStack(RNN, CONTROLLER_OUTPUT_SIZE, OUTPUT_SIZE, STACK_VECTOR_SIZE, return_sequences=True, batch_input_shape=(BATCH_SIZE, MAX_SEQUENCE_LENGTH, len(chars)))
+neural_stack_layer = NeuralStack(RNN, CONTROLLER_OUTPUT_SIZE, OUTPUT_SIZE, STACK_VECTOR_SIZE, return_sequences=True,
+                                 batch_input_shape=(BATCH_SIZE, MAX_SEQUENCE_LENGTH, len(chars)))
 
 model.add(neural_stack_layer)
 model.add(Activation('softmax'))
 
 print 'Compiling model..'
 rmsprop = RMSprop(clipvalue=1.0)
-model.compile(loss='categorical_crossentropy', optimizer=rmsprop)
+model.compile(loss='categorical_crossentropy',
+              optimizer=rmsprop,
+              metrics=['accuracy'])
+
 print 'Model compiled..'
 
 print 'Fitting..'
-res = model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=1, validation_split=0.25)
+res = model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=1)
 
-X, Y = generate_sequences(lookup_table, 1, MAX_SEQUENCE_LENGTH)
+test_X, test_Y = generate_sequences(lookup_table, BATCH_SIZE, MAX_SEQUENCE_LENGTH)
 
-preds = model.predict(X)
+score, acc = model.evaluate(test_X, test_Y)
 
-print preds
+print('Test score:', score)
+print('Test accuracy:', acc)
