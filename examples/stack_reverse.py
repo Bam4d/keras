@@ -2,7 +2,7 @@
 from keras.models import Sequential
 from keras.layers.core import Activation
 from keras.layers import NeuralStack, recurrent
-from keras.optimizers import RMSprop
+from keras.optimizers import RMSprop, Adagrad
 from sklearn.metrics import precision_recall_curve
 from sklearn.metrics import average_precision_score
 import numpy as np
@@ -40,15 +40,15 @@ class CharacterTable(object):
         return ''.join(self.indices_char[x] for x in X)
 
 
-def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
+def generate_sequences(lookup_table, number_of_sequences, min_sequence_length, max_sequence_length):
 
-    X = np.zeros((number_of_sequences, max_sequence_length, len(lookup_table.chars)))
-    Y = np.zeros((number_of_sequences, max_sequence_length, len(lookup_table.chars)))
+    padded_sequence_length = max_sequence_length*2+3
+    X = np.zeros((number_of_sequences, padded_sequence_length, len(lookup_table.chars)))
+    Y = np.zeros((number_of_sequences, padded_sequence_length, len(lookup_table.chars)))
     for s in range(number_of_sequences):
 
         # have to take into account the start, stop and reverse chars, and divide the sequence by two so we can reverse
-        sequence_length = np.random.randint(3, high=(max_sequence_length-3)/2)
-        #sequence_length = (max_sequence_length-3)/2
+        sequence_length = np.random.randint(low=min_sequence_length, high=max_sequence_length)
         sequence = np.random.randint(low=0, high=len(lookup_table.chars)-3, size=sequence_length)
 
         # the start, stop and reverse characters
@@ -59,14 +59,14 @@ def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
         stop_seq = np.ones((sequence_length))*stop
         start_seq = np.ones((sequence_length))*start
 
-        full_x_sequence = np.concatenate([[start],  sequence, [reverse],  stop_seq,       [stop]])
+        full_x_sequence = np.concatenate([[start],  sequence,  [reverse], stop_seq,       [stop]])
         full_y_sequence = np.concatenate([[start],  start_seq, [reverse], sequence[::-1], [stop]])
 
         x = lookup_table.one_hot(full_x_sequence)
         y = lookup_table.one_hot(full_y_sequence)
 
         # Pad x and y with stop symbol
-        for k in range(len(full_x_sequence), max_sequence_length):
+        for k in range(len(full_x_sequence), padded_sequence_length):
             x[k, stop] = 1
             y[k, stop] = 1
 
@@ -76,7 +76,7 @@ def generate_sequences(lookup_table, number_of_sequences, max_sequence_length):
     return X, Y
 
 # Number of sequences in the test set to generate
-NUMBER_OF_SEQUENCES = 100000
+NUMBER_OF_SEQUENCES = 3000
 
 # This is the list of characters to  we will learn to reverse
 chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -85,33 +85,37 @@ chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 # | reverse character
 
 # This is the max sequence length plus the reversal, plus the start, stop and reverse characters
-MAX_SEQUENCE_LENGTH = 20
+MAX_SEQUENCE_LENGTH = 65
+MIN_SEQUENCE_LENGTH = 8
+
+PADDED_SEQUENCE_LENGTH = MAX_SEQUENCE_LENGTH*2+3
 
 RNN = recurrent.SimpleRNN
-CONTROLLER_OUTPUT_SIZE = 100
-STACK_VECTOR_SIZE = 100
+CONTROLLER_OUTPUT_SIZE = 50
+STACK_VECTOR_SIZE = 50
 OUTPUT_SIZE = len(chars)
 BATCH_SIZE = 10
 
 # Have to add the start, stop and reverse chars
-lookup_table = CharacterTable(chars, MAX_SEQUENCE_LENGTH)
+lookup_table = CharacterTable(chars, PADDED_SEQUENCE_LENGTH)
 
 print 'Generating training data...'
-X, Y = generate_sequences(lookup_table, NUMBER_OF_SEQUENCES, MAX_SEQUENCE_LENGTH)
+X, Y = generate_sequences(lookup_table, NUMBER_OF_SEQUENCES, MIN_SEQUENCE_LENGTH, MAX_SEQUENCE_LENGTH)
 
 print 'Building model...'
 model = Sequential()
 
 neural_stack_layer = NeuralStack(RNN, CONTROLLER_OUTPUT_SIZE, OUTPUT_SIZE, STACK_VECTOR_SIZE, return_sequences=True,
-                                 batch_input_shape=(BATCH_SIZE, MAX_SEQUENCE_LENGTH, len(chars)))
+                                 batch_input_shape=(BATCH_SIZE, PADDED_SEQUENCE_LENGTH, len(chars)))
 
 model.add(neural_stack_layer)
 model.add(Activation('softmax'))
 
 print 'Compiling model..'
-rmsprop = RMSprop(clipvalue=1.0)
+rmsprop = RMSprop(clipvalue=5.0)
+adagrad = Adagrad()
 model.compile(loss='categorical_crossentropy',
-              optimizer=rmsprop,
+              optimizer=adagrad,
               metrics=['accuracy'])
 
 print 'Model compiled..'
@@ -119,7 +123,7 @@ print 'Model compiled..'
 print 'Fitting..'
 res = model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=1)
 
-test_X, test_Y = generate_sequences(lookup_table, BATCH_SIZE, MAX_SEQUENCE_LENGTH)
+test_X, test_Y = generate_sequences(lookup_table, BATCH_SIZE, MIN_SEQUENCE_LENGTH, MAX_SEQUENCE_LENGTH)
 
 score, acc = model.evaluate(test_X, test_Y)
 

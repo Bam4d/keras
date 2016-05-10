@@ -867,12 +867,12 @@ class NeuralStack(Recurrent):
         self.input_dim = input_dim
 
         # Weights for the push, pop, vector and output
-        self.W_d = self.init((self.controller_output_dim,), name='{}_W_d'.format(self.name))
-        self.b_d = self.init((1,), name='{}_b_d'.format(self.name))
+        self.W_push = self.init((self.controller_output_dim,), name='{}_W_d'.format(self.name))
+        self.b_push = K.ones((1,), name='{}_b_push'.format(self.name))
 
-        self.W_u = self.init((self.controller_output_dim,), name='{}_W_u'.format(self.name))
+        self.W_pop = self.init((self.controller_output_dim,), name='{}_W_pop'.format(self.name))
         # Pop bias initialization starting at -1 as described in the paper
-        self.b_u = K.ones((1,), name='{}_b_u'.format(self.name))
+        self.b_pop = K.ones((1,), name='{}_b_pop'.format(self.name))*-1.0
 
         self.W_v = self.init((self.controller_output_dim, self.stack_vector_size), name='{}_W_v'.format(self.name))
         self.b_v = self.init((self.stack_vector_size,), name='{}_b_v'.format(self.name))
@@ -881,7 +881,7 @@ class NeuralStack(Recurrent):
         self.b_o = self.init((self.output_dim,), name='{}_b_o'.format(self.name))
 
         # the trainable_weights for this layer are the trainable_weights for the controller layer plus the weights from the stack output
-        self.trainable_weights = [self.W_d, self.b_d, self.W_u, self.b_u, self.W_v, self.b_v, self.W_o, self.b_o] + self._controller.trainable_weights
+        self.trainable_weights = [self.W_push, self.b_push, self.W_pop, self.b_pop, self.W_v, self.b_v, self.W_o, self.b_o] + self._controller.trainable_weights
 
         self.reset_stack(input_shape)
 
@@ -921,18 +921,18 @@ class NeuralStack(Recurrent):
 
         prev_r = states[0]
         controller_states = states[1:]
-        controller_input = K.concatenate([x, prev_r], axis=1)
+        controller_input = K.concatenate([x, prev_r])
 
         controller_output, controller_output_states = self._controller_step(controller_input, controller_states)
 
-        u = K.sigmoid(K.expand_dims(K.dot(controller_output, self.W_u)) + self.b_u)
-        d = K.sigmoid(K.expand_dims(K.dot(controller_output, self.W_d)) + self.b_d)
+        pop = K.sigmoid(K.expand_dims(K.dot(controller_output, self.W_pop)) + self.b_pop)
+        push = K.sigmoid(K.expand_dims(K.dot(controller_output, self.W_push)) + self.b_push)
         v = K.tanh(K.dot(controller_output, self.W_v) + self.b_v)
 
         output = K.tanh(K.dot(controller_output, self.W_o) + self.b_o)
 
         # Should update this so we don;t have to transpose these
-        _, _, r = self._step(u, d, v)
+        _, _, r = self._step(pop, push, v)
 
         controller_output_states.insert(0, r)
 
@@ -943,3 +943,12 @@ class NeuralStack(Recurrent):
         self.step_count = K.variable(1, dtype=np.int32)
         self.vectors = K.variable(np.zeros((self.batch_size, input_length, self.stack_vector_size)))
         self.strengths = K.variable(np.zeros((self.batch_size, input_length)))
+
+    def get_config(self):
+        config = {"output_dim": self.output_dim,
+                  "init": self.init.__name__,
+                  "controller_config": self._controller.get_config()}
+
+        config['batch_input_shape'] = self.input_spec[0].shape
+        base_config = super(NeuralStack, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
