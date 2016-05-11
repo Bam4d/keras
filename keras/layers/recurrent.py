@@ -866,13 +866,16 @@ class NeuralStack(Recurrent):
         input_dim = input_shape[2]
         self.input_dim = input_dim
 
+        self.W_prime = self.init((self.controller_output_dim,self.controller_output_dim), name='{}_W_prime'.format(self.name))
+        self.b_prime = self.init((self.controller_output_dim,), name='{}_b_prime'.format(self.name))
+
         # Weights for the push, pop, vector and output
-        self.W_push = self.init((self.controller_output_dim,), name='{}_W_d'.format(self.name))
-        self.b_push = K.ones((1,), name='{}_b_push'.format(self.name))
+        self.W_push = self.init((self.controller_output_dim,), name='{}_W_push'.format(self.name))
+        self.b_push = self.init((1,), name='{}_b_push'.format(self.name))
 
         self.W_pop = self.init((self.controller_output_dim,), name='{}_W_pop'.format(self.name))
         # Pop bias initialization starting at -1 as described in the paper
-        self.b_pop = K.ones((1,), name='{}_b_pop'.format(self.name))*-1.0
+        self.b_pop = K.variable(-1.0, name='{}_b_pop'.format(self.name))
 
         self.W_v = self.init((self.controller_output_dim, self.stack_vector_size), name='{}_W_v'.format(self.name))
         self.b_v = self.init((self.stack_vector_size,), name='{}_b_v'.format(self.name))
@@ -881,16 +884,15 @@ class NeuralStack(Recurrent):
         self.b_o = self.init((self.output_dim,), name='{}_b_o'.format(self.name))
 
         # the trainable_weights for this layer are the trainable_weights for the controller layer plus the weights from the stack output
-        self.trainable_weights = [self.W_push, self.b_push, self.W_pop, self.b_pop, self.W_v, self.b_v, self.W_o, self.b_o] + self._controller.trainable_weights
+        self.trainable_weights = [self.W_prime, self.b_prime, self.W_push, self.b_push, self.W_pop, self.b_pop, self.W_v, self.b_v, self.W_o, self.b_o] + self._controller.trainable_weights
 
         self.reset_stack(input_shape)
 
     def _rev_cumsum(self, seq):
-        return K.cumsum(seq[::-1], axis=0)[::-1]
+        return K.concatenate([K.cumsum(seq[:,::-1], axis=1)[:,::-1][:, 1:], K.zeros((self.batch_size, 1))])
 
     def _step(self, pop, push, vec):
-        ncs = K.concatenate([self._rev_cumsum(self.strengths[:, self.stindex:self.step_count]),
-                                 K.zeros((self.batch_size, 1))])
+        ncs = self._rev_cumsum(self.strengths)[:,:self.step_count]
 
         prev_strengths = self.strengths[:, :self.step_count]
 
@@ -901,15 +903,11 @@ class NeuralStack(Recurrent):
 
         self.vectors = T.set_subtensor(self.vectors[:, self.step_count], vec)
         self.step_count += 1
-
         self.strengths = T.set_subtensor(self.strengths[:, :self.step_count], K.concatenate([updated_strengths, push], axis=1))
 
-        new_ncs = K.concatenate([self._rev_cumsum(self.strengths[:, self.stindex:self.step_count].T).T,
-                             K.zeros((self.batch_size, 1))])
-
-        score = K.min([self.strengths[:, :self.step_count], K.relu(1-new_ncs)], axis=0)
-
-        r = K.batch_dot(score, self.vectors[:, :self.step_count, :])
+        new_ncs = self._rev_cumsum(self.strengths)[:,1:self.step_count]
+        score = K.min([self.strengths[:, 1:self.step_count], K.relu(1-new_ncs)], axis=0)
+        r = K.batch_dot(score, self.vectors[:, 1:self.step_count, :])
 
         return self.vectors[:, :self.step_count], self.strengths[:, :self.step_count], r
 
@@ -925,9 +923,10 @@ class NeuralStack(Recurrent):
 
         controller_output, controller_output_states = self._controller_step(controller_input, controller_states)
 
-        pop = K.sigmoid(K.expand_dims(K.dot(controller_output, self.W_pop)) + self.b_pop)
-        push = K.sigmoid(K.expand_dims(K.dot(controller_output, self.W_push)) + self.b_push)
-        v = K.tanh(K.dot(controller_output, self.W_v) + self.b_v)
+        o_prime = K.sigmoid(K.dot(controller_states[0], self.W_prime) + self.b_prime)
+        pop = K.sigmoid(K.expand_dims(K.dot(o_prime, self.W_pop)) + self.b_pop)
+        push = K.sigmoid(K.expand_dims(K.dot(o_prime, self.W_push)) + self.b_push)
+        v = K.tanh(K.dot(o_prime, self.W_v) + self.b_v)
 
         output = K.tanh(K.dot(controller_output, self.W_o) + self.b_o)
 

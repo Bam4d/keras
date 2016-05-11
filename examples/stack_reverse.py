@@ -56,7 +56,7 @@ def generate_sequences(lookup_table, number_of_sequences, min_sequence_length, m
         reverse = 27 # |
         stop = 28 # }
 
-        stop_seq = np.ones((sequence_length))*stop
+        stop_seq = np.ones((sequence_length))*reverse
         start_seq = np.ones((sequence_length))*start
 
         full_x_sequence = np.concatenate([[start],  sequence,  [reverse], stop_seq,       [stop]])
@@ -86,15 +86,15 @@ chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 # This is the max sequence length plus the reversal, plus the start, stop and reverse characters
 MAX_SEQUENCE_LENGTH = 65
-MIN_SEQUENCE_LENGTH = 8
+MIN_SEQUENCE_LENGTH = 64
 
 PADDED_SEQUENCE_LENGTH = MAX_SEQUENCE_LENGTH*2+3
 
 RNN = recurrent.SimpleRNN
-CONTROLLER_OUTPUT_SIZE = 50
-STACK_VECTOR_SIZE = 50
+CONTROLLER_OUTPUT_SIZE = 40
+STACK_VECTOR_SIZE = 40
 OUTPUT_SIZE = len(chars)
-BATCH_SIZE = 10
+BATCH_SIZE = 50
 
 # Have to add the start, stop and reverse chars
 lookup_table = CharacterTable(chars, PADDED_SEQUENCE_LENGTH)
@@ -112,10 +112,10 @@ model.add(neural_stack_layer)
 model.add(Activation('softmax'))
 
 print 'Compiling model..'
-rmsprop = RMSprop(clipvalue=5.0)
+rmsprop = RMSprop(clipvalue=1.0)
 adagrad = Adagrad()
 model.compile(loss='categorical_crossentropy',
-              optimizer=adagrad,
+              optimizer=rmsprop,
               metrics=['accuracy'])
 
 print 'Model compiled..'
@@ -129,3 +129,6 @@ score, acc = model.evaluate(test_X, test_Y)
 
 print('Test score:', score)
 print('Test accuracy:', acc)
+
+print np.argmax(test_X[0])
+print np.argmax(test_Y[0])
