@@ -923,12 +923,12 @@ class NeuralStack(Recurrent):
 
         controller_output, controller_output_states = self._controller_step(controller_input, controller_states)
 
-        o_prime = K.sigmoid(K.dot(controller_states[0], self.W_prime) + self.b_prime)
+        o_prime = K.sigmoid(K.dot(controller_output_states[0], self.W_prime) + self.b_prime)
         pop = K.sigmoid(K.expand_dims(K.dot(o_prime, self.W_pop)) + self.b_pop)
         push = K.sigmoid(K.expand_dims(K.dot(o_prime, self.W_push)) + self.b_push)
         v = K.tanh(K.dot(o_prime, self.W_v) + self.b_v)
 
-        output = K.tanh(K.dot(controller_output, self.W_o) + self.b_o)
+        output = K.tanh(K.dot(o_prime, self.W_o) + self.b_o)
 
         # Should update this so we don;t have to transpose these
         _, _, r = self._step(pop, push, v)
