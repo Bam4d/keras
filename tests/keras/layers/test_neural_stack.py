@@ -121,17 +121,17 @@ def test_compute_read():
 
     stack = NeuralStack(MockController, controller_output_dim, output_dim, vector_size, batch_size, batch_input_shape=(batch_size, time_steps, input_dim))
 
-    stack.step_count = K.variable(step_number, dtype=np.int32)
-    stack.vectors = K.variable(np.zeros([batch_size, time_steps, stack.stack_vector_size]))
-    stack.strengths = K.variable(np.zeros([batch_size, time_steps]))
-    stack.strengths = T.set_subtensor(stack.strengths[:, :step_number], K.variable(np.array([[0.5,0.4], [0.5,0.4]])))
-    stack.vectors = T.set_subtensor(stack.vectors[:, :step_number, :], K.variable(np.array([[[1.0,0.0,0.0],[0.0,2.0,0.0]], [[1.0,0.0,0.0],[0.0,2.0,0.0]]])))
+    step_count = K.variable(step_number, dtype=np.int32)
+    vectors = K.variable(np.zeros([batch_size, time_steps, stack.stack_vector_size]))
+    strengths = K.variable(np.zeros([batch_size, time_steps]))
+    strengths = T.set_subtensor(strengths[:, :step_number], K.variable(np.array([[0.5,0.4], [0.5,0.4]])))
+    vectors = T.set_subtensor(vectors[:, :step_number, :], K.variable(np.array([[[1.0,0.0,0.0],[0.0,2.0,0.0]], [[1.0,0.0,0.0],[0.0,2.0,0.0]]])))
 
-    vec, s, r = stack._step(pop, push, vec)
+    step_count, vectors, strengths, read = stack._step(pop, push, vec, step_count, vectors, strengths)
 
-    assert np.allclose(K.eval(s), np.array([[0.5, 0.4, 1.0], [0.5, 0.4, 0.8]]), atol=0.001)
-    assert np.allclose(K.eval(vec), np.array([[[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 3.0]],[[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 3.0]]]), atol=0.001)
-    assert np.allclose(K.eval(r), np.array([[0.0, 0.0, 3.0], [0.0, 0.4, 2.4]]), atol=0.001)
+    assert np.allclose(K.eval(strengths[:, :step_count]), np.array([[0.5, 0.4, 1.0], [0.5, 0.4, 0.8]]), atol=0.001)
+    assert np.allclose(K.eval(vectors[:, :step_count]), np.array([[[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 3.0]],[[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 3.0]]]), atol=0.001)
+    assert np.allclose(K.eval(read), np.array([[0.0, 0.0, 3.0], [0.0, 0.4, 2.4]]), atol=0.001)
 
 
 @pytest.mark.skipif(K._BACKEND == 'tensorflow',
@@ -159,20 +159,20 @@ def test_neural_stack_step():
 
     stack = NeuralStack(MockController, controller_output_dim, output_dim, vector_size, batch_input_shape=(batch_size ,time_steps, input_dim))
 
-    stack.build((batch_size ,time_steps, input_dim))
+    stack.build((batch_size, time_steps, input_dim))
 
-    stack.step_count = K.variable(step_number, dtype=np.int32)
-    stack.vectors = K.variable(np.zeros([batch_size, time_steps, stack.stack_vector_size]))
-    stack.strengths = K.variable(np.zeros([batch_size, time_steps]))
-    stack.strengths = T.set_subtensor(stack.strengths[:, :step_number], K.variable(np.array([[0.4,0.1,0.3],[0.5,0.4,1.0],[0.3,0.3,0.3]])))
-    stack.vectors = T.set_subtensor(stack.vectors[:, :step_number, :], K.variable(np.array([[[1,1,1],[2,2,2],[3,0,3]],[[1,0,0],[0,2,0],[0,0,3]],[[1,0,0],[0,2,0],[0,0,3]]])))
+    step_count = K.variable(step_number, dtype=np.int32)
+    vectors = K.variable(np.zeros([batch_size, time_steps, stack.stack_vector_size]))
+    strengths = K.variable(np.zeros([batch_size, time_steps]))
+    strengths = T.set_subtensor(strengths[:, :step_number], K.variable(np.array([[0.4,0.1,0.3],[0.5,0.4,1.0],[0.3,0.3,0.3]])))
+    vectors = T.set_subtensor(vectors[:, :step_number, :], K.variable(np.array([[[1,1,1],[2,2,2],[3,0,3]],[[1,0,0],[0,2,0],[0,0,3]],[[1,0,0],[0,2,0],[0,0,3]]])))
 
-    vec, s, r = stack._step(pop, push, vec)
+    step_count, vectors, strengths, read = stack._step(pop, push, vec, step_count, vectors, strengths)
 
-    assert np.allclose(K.eval(s), np.array([[0.4,0.1,0.1,0.4], [0.5,0.4,0.8,1.0],[0.3,0.3,0.1,0.2]]), atol=0.001)
-    assert np.allclose(K.eval(vec), np.array([[[1,1,1], [2,2,2], [3,0,3], [1,0,1]], [[1,0,0], [0,2,0], [0,0,3], [1,0,1]], [[1,0,0], [0,2,0], [0,0,3], [1,0,1]], ]), atol=0.001)
-    assert np.allclose(K.eval(r), np.array([[0.9,0.2,0.9], [1,0,1], [0.2,0.6,0.5]]), atol=0.001)
-#
+    assert np.allclose(K.eval(strengths[:, :step_count]), np.array([[0.4,0.1,0.1,0.4], [0.5,0.4,0.8,1.0],[0.3,0.3,0.1,0.2]]), atol=0.001)
+    assert np.allclose(K.eval(vectors[:, :step_count]), np.array([[[1,1,1], [2,2,2], [3,0,3], [1,0,1]], [[1,0,0], [0,2,0], [0,0,3], [1,0,1]], [[1,0,0], [0,2,0], [0,0,3], [1,0,1]], ]), atol=0.001)
+    assert np.allclose(K.eval(read), np.array([[0.9,0.2,0.9], [1,0,1], [0.2,0.6,0.5]]), atol=0.001)
+
 def test_reverse_cumalative_sum():
 
     stack = NeuralStack(MockController, 5, 6, 3, batch_input_shape=(3, 10, 4))
@@ -181,7 +181,7 @@ def test_reverse_cumalative_sum():
     sum = stack._rev_cumsum(seq)
 
     assert np.allclose(K.eval(sum), np.array([[0.4,0.3,0.0],[1.4,1.0,0],[0.6,0.3,0.0]]), atol=0.001)
-#
+
 def test_push_pop():
     batch_size = 1
     vector_size = 3
@@ -204,9 +204,13 @@ def test_push_pop():
 
     stack.build((batch_size, time_steps, input_dim))
 
+    step_count = K.variable(1, dtype=np.int32)
+    vectors = K.variable(np.zeros([batch_size, time_steps, stack.stack_vector_size]))
+    strengths = K.variable(np.zeros([batch_size, time_steps]))
+
     for step in range(0, len(pops)):
-        vec, s, r = stack._step(K.variable(pops[step].reshape(1,1)), K.variable(pushes[step].reshape(1,1)), K.variable(vecs[step].reshape(1,3)))
-        assert_allclose(K.eval(r), expected[step].reshape(1,3))
+        step_count, vectors, strengths, read = stack._step(K.variable(pops[step].reshape(1,1)), K.variable(pushes[step].reshape(1,1)), K.variable(vecs[step].reshape(1,3)),  step_count, vectors, strengths)
+        assert_allclose(K.eval(read), expected[step].reshape(1,3), rtol=1e-4)
 
 def test_neural_stack_with_controller():
 

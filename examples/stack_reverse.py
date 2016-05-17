@@ -3,8 +3,6 @@ from keras.models import Sequential
 from keras.layers.core import Activation
 from keras.layers import NeuralStack, recurrent
 from keras.optimizers import RMSprop, Adagrad
-from sklearn.metrics import precision_recall_curve
-from sklearn.metrics import average_precision_score
 import numpy as np
 
 class CharacterTable(object):
@@ -56,11 +54,11 @@ def generate_sequences(lookup_table, number_of_sequences, min_sequence_length, m
         reverse = 27 # |
         stop = 28 # }
 
-        stop_seq = np.ones((sequence_length))*reverse
+        stop_seq = np.ones((sequence_length))*stop
         start_seq = np.ones((sequence_length))*start
 
-        full_x_sequence = np.concatenate([[start],  sequence,  [reverse], stop_seq,       [stop]])
-        full_y_sequence = np.concatenate([[start],  start_seq, [reverse], sequence[::-1], [stop]])
+        full_x_sequence = np.concatenate([[start],  sequence,  [reverse], sequence[::-1], [stop]])
+        full_y_sequence = np.concatenate([[start],  sequence, [reverse], sequence[::-1], [stop]])
 
         x = lookup_table.one_hot(full_x_sequence)
         y = lookup_table.one_hot(full_y_sequence)
@@ -76,7 +74,7 @@ def generate_sequences(lookup_table, number_of_sequences, min_sequence_length, m
     return X, Y
 
 # Number of sequences in the test set to generate
-NUMBER_OF_SEQUENCES = 3000
+NUMBER_OF_SEQUENCES = 1000
 
 # This is the list of characters to  we will learn to reverse
 chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -85,16 +83,16 @@ chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 # | reverse character
 
 # This is the max sequence length plus the reversal, plus the start, stop and reverse characters
-MAX_SEQUENCE_LENGTH = 65
-MIN_SEQUENCE_LENGTH = 64
+MAX_SEQUENCE_LENGTH = 10
+MIN_SEQUENCE_LENGTH = 3
 
 PADDED_SEQUENCE_LENGTH = MAX_SEQUENCE_LENGTH*2+3
 
 RNN = recurrent.SimpleRNN
-CONTROLLER_OUTPUT_SIZE = 40
-STACK_VECTOR_SIZE = 40
+CONTROLLER_OUTPUT_SIZE = 50
+STACK_VECTOR_SIZE = 50
 OUTPUT_SIZE = len(chars)
-BATCH_SIZE = 50
+BATCH_SIZE = 10
 
 # Have to add the start, stop and reverse chars
 lookup_table = CharacterTable(chars, PADDED_SEQUENCE_LENGTH)
@@ -125,10 +123,12 @@ res = model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=1)
 
 test_X, test_Y = generate_sequences(lookup_table, BATCH_SIZE, MIN_SEQUENCE_LENGTH, MAX_SEQUENCE_LENGTH)
 
-score, acc = model.evaluate(test_X, test_Y)
+pred = model.predict(test_X, batch_size=BATCH_SIZE)
 
-print('Test score:', score)
-print('Test accuracy:', acc)
+#print('Test score:', score)
+#print('Test accuracy:', acc)
 
-print np.argmax(test_X[0])
-print np.argmax(test_Y[0])
+for t in range(0, BATCH_SIZE):
+    print np.argmax(test_Y[t], axis=1)
+    print np.argmax(pred[t], axis=1)
+    print "----"
