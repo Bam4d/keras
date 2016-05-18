@@ -43,6 +43,8 @@ def generate_sequences(lookup_table, number_of_sequences, min_sequence_length, m
     padded_sequence_length = max_sequence_length*2+3
     X = np.zeros((number_of_sequences, padded_sequence_length, len(lookup_table.chars)))
     Y = np.zeros((number_of_sequences, padded_sequence_length, len(lookup_table.chars)))
+    Mask = np.zeros((number_of_sequences, padded_sequence_length))
+
     for s in range(number_of_sequences):
 
         # have to take into account the start, stop and reverse chars, and divide the sequence by two so we can reverse
@@ -57,8 +59,11 @@ def generate_sequences(lookup_table, number_of_sequences, min_sequence_length, m
         stop_seq = np.ones((sequence_length))*stop
         start_seq = np.ones((sequence_length))*start
 
-        full_x_sequence = np.concatenate([[start],  sequence,  [reverse], sequence[::-1], [stop]])
-        full_y_sequence = np.concatenate([[start],  sequence, [reverse], sequence[::-1], [stop]])
+        full_x_sequence = np.concatenate([[start],  sequence,  [reverse], stop_seq, [stop]])
+        full_y_sequence = np.concatenate([[start],  start_seq, sequence[::-1], [stop]])
+
+        # Use sample weights as a mask for training, we want to ignore the gradients in the padding sections
+        sample_weight_mask = np.concatenate([[0], np.zeros((sequence_length)), np.ones((sequence_length)), [1]])
 
         x = lookup_table.one_hot(full_x_sequence)
         y = lookup_table.one_hot(full_y_sequence)
@@ -68,13 +73,17 @@ def generate_sequences(lookup_table, number_of_sequences, min_sequence_length, m
             x[k, stop] = 1
             y[k, stop] = 1
 
+        padded_sample_weight_mask = np.zeros((padded_sequence_length))
+        padded_sample_weight_mask[:len(sample_weight_mask)] = sample_weight_mask
+
         X[s] = x
         Y[s] = y
+        Mask[s] = padded_sample_weight_mask
 
-    return X, Y
+    return X, Y, Mask
 
 # Number of sequences in the test set to generate
-NUMBER_OF_SEQUENCES = 1000
+NUMBER_OF_SEQUENCES = 10000
 
 # This is the list of characters to  we will learn to reverse
 chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -83,22 +92,23 @@ chars = '{}|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 # | reverse character
 
 # This is the max sequence length plus the reversal, plus the start, stop and reverse characters
-MAX_SEQUENCE_LENGTH = 10
-MIN_SEQUENCE_LENGTH = 3
+MAX_SEQUENCE_LENGTH = 20
+MIN_SEQUENCE_LENGTH = 8
 
 PADDED_SEQUENCE_LENGTH = MAX_SEQUENCE_LENGTH*2+3
 
 RNN = recurrent.SimpleRNN
-CONTROLLER_OUTPUT_SIZE = 50
-STACK_VECTOR_SIZE = 50
+CONTROLLER_OUTPUT_SIZE = 128
+STACK_VECTOR_SIZE = 128
 OUTPUT_SIZE = len(chars)
-BATCH_SIZE = 10
+BATCH_SIZE = 100
 
 # Have to add the start, stop and reverse chars
 lookup_table = CharacterTable(chars, PADDED_SEQUENCE_LENGTH)
 
 print 'Generating training data...'
-X, Y = generate_sequences(lookup_table, NUMBER_OF_SEQUENCES, MIN_SEQUENCE_LENGTH, MAX_SEQUENCE_LENGTH)
+X, Y, sample_weight_mask = generate_sequences(lookup_table, NUMBER_OF_SEQUENCES, MIN_SEQUENCE_LENGTH, MAX_SEQUENCE_LENGTH)
+
 
 print 'Building model...'
 model = Sequential()
@@ -111,22 +121,24 @@ model.add(Activation('softmax'))
 
 print 'Compiling model..'
 rmsprop = RMSprop(clipvalue=1.0)
-adagrad = Adagrad()
-model.compile(loss='categorical_crossentropy',
+#adagrad = Adagrad()
+model.compile(loss='binary_crossentropy',
               optimizer=rmsprop,
-              metrics=['accuracy'])
+              metrics=['accuracy'],
+              sample_weight_mode="temporal")
 
 print 'Model compiled..'
 
 print 'Fitting..'
-res = model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=1)
+res = model.fit(X, Y, batch_size=BATCH_SIZE, nb_epoch=1, sample_weight=sample_weight_mask)
 
-test_X, test_Y = generate_sequences(lookup_table, BATCH_SIZE, MIN_SEQUENCE_LENGTH, MAX_SEQUENCE_LENGTH)
+test_X, test_Y, _ = generate_sequences(lookup_table, BATCH_SIZE, MIN_SEQUENCE_LENGTH, MAX_SEQUENCE_LENGTH)
 
+score, acc = model.evaluate(test_X, test_Y, batch_size=BATCH_SIZE)
 pred = model.predict(test_X, batch_size=BATCH_SIZE)
 
-#print('Test score:', score)
-#print('Test accuracy:', acc)
+print('Test score:', score)
+print('Test accuracy:', acc)
 
 for t in range(0, BATCH_SIZE):
     print np.argmax(test_Y[t], axis=1)

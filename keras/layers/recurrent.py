@@ -823,8 +823,6 @@ class NeuralStack(Recurrent):
         timesteps = kwargs['batch_input_shape'][1]
         input_dim = kwargs['batch_input_shape'][2]
 
-        self.stindex = 1
-
         self.stack_vector_size = stack_vector_size
 
         self._controller_class = controller_class
@@ -848,9 +846,12 @@ class NeuralStack(Recurrent):
         reducer = K.zeros((self.input_dim, self.stack_vector_size))
         initial_r = K.dot(initial_r, reducer)
 
+        # Steps start at one so the first strength and and vector is zeros
         step_count = K.variable(1, dtype=np.int32)
-        vectors = K.variable(np.zeros((self.batch_size, self.input_spec[0].shape[1], self.stack_vector_size)))
-        strengths = K.variable(np.zeros((self.batch_size, self.input_spec[0].shape[1])))
+        stack_length = self.input_spec[0].shape[1]+1
+
+        vectors = K.variable(np.zeros((self.batch_size, stack_length, self.stack_vector_size)))
+        strengths = K.variable(np.zeros((self.batch_size, stack_length)))
 
         return [step_count, vectors, strengths, initial_r] + self._controller.get_initial_states(K.zeros(self.controller_input_shape))
 
@@ -920,13 +921,13 @@ class NeuralStack(Recurrent):
         '''
 
         stack_states = states[:4]
-        prev_r = stack_states[3]
+        r_tm1 = stack_states[3]
         controller_states = states[4:]
-        controller_input = K.concatenate([x, prev_r])
+        controller_input = K.concatenate([x, r_tm1])
 
         controller_output, controller_output_states = self._controller_step(controller_input, controller_states)
 
-        o_prime = K.sigmoid(K.dot(controller_output_states[0], self.W_prime) + self.b_prime)
+        o_prime = K.sigmoid(K.dot(controller_output, self.W_prime) + self.b_prime)
         pop = K.sigmoid(K.expand_dims(K.dot(o_prime, self.W_pop)) + self.b_pop)
         push = K.sigmoid(K.expand_dims(K.dot(o_prime, self.W_push)) + self.b_push)
         v = K.tanh(K.dot(o_prime, self.W_v) + self.b_v)
