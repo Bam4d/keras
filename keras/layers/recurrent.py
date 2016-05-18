@@ -850,8 +850,8 @@ class NeuralStack(Recurrent):
         step_count = K.variable(1, dtype=np.int32)
         stack_length = self.input_spec[0].shape[1]+1
 
-        vectors = K.variable(np.zeros((self.batch_size, stack_length, self.stack_vector_size)))
-        strengths = K.variable(np.zeros((self.batch_size, stack_length)))
+        vectors = K.zeros((self.batch_size, stack_length, self.stack_vector_size))
+        strengths = K.zeros((self.batch_size, stack_length))
 
         return [step_count, vectors, strengths, initial_r] + self._controller.get_initial_states(K.zeros(self.controller_input_shape))
 
@@ -877,7 +877,7 @@ class NeuralStack(Recurrent):
 
         # Weights for the push, pop, vector and output
         self.W_push = self.init((self.controller_output_dim,), name='{}_W_push'.format(self.name))
-        self.b_push = self.init((1,), name='{}_b_push'.format(self.name))
+        self.b_push = K.variable(1.0, name='{}_b_push'.format(self.name))
 
         self.W_pop = self.init((self.controller_output_dim,), name='{}_W_pop'.format(self.name))
         # Pop bias initialization starting at -1 as described in the paper
@@ -938,9 +938,9 @@ class NeuralStack(Recurrent):
         prev_vectors = stack_states[1]
         prev_strengths = stack_states[2]
 
-        step_count, vectors, strengths, r = self._step(pop, push, v, prev_step_count, prev_vectors, prev_strengths)
+        step_count, vectors, strengths, read = self._step(pop, push, v, prev_step_count, prev_vectors, prev_strengths)
 
-        new_states = [step_count, vectors, strengths, r] + controller_output_states
+        new_states = [step_count, vectors, strengths, read] + controller_output_states
 
         return output, new_states
 

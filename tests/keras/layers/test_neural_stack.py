@@ -210,7 +210,7 @@ def test_push_pop():
 
     for step in range(0, len(pops)):
         step_count, vectors, strengths, read = stack._step(K.variable(pops[step].reshape(1,1)), K.variable(pushes[step].reshape(1,1)), K.variable(vecs[step].reshape(1,3)),  step_count, vectors, strengths)
-        assert_allclose(K.eval(read), expected[step].reshape(1,3), rtol=1e-4)
+        assert_allclose(K.eval(read), expected[step].reshape(1, 3), rtol=1e-4)
 
 def test_neural_stack_with_controller():
 
