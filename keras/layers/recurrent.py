@@ -877,11 +877,11 @@ class NeuralStack(Recurrent):
 
         # Weights for the push, pop, vector and output
         self.W_push = self.init((self.controller_output_dim,), name='{}_W_push'.format(self.name))
-        self.b_push = K.variable(1.0, name='{}_b_push'.format(self.name))
+        self.b_push = K.zeros((1,), name='{}_b_push'.format(self.name))
 
         self.W_pop = self.init((self.controller_output_dim,), name='{}_W_pop'.format(self.name))
         # Pop bias initialization starting at -1 as described in the paper
-        self.b_pop = K.variable(-1.0, name='{}_b_pop'.format(self.name))
+        self.b_pop = K.variable(-5.0, name='{}_b_pop'.format(self.name))
 
         self.W_v = self.init((self.controller_output_dim, self.stack_vector_size), name='{}_W_v'.format(self.name))
         self.b_v = self.init((self.stack_vector_size,), name='{}_b_v'.format(self.name))
@@ -927,7 +927,7 @@ class NeuralStack(Recurrent):
 
         controller_output, controller_output_states = self._controller_step(controller_input, controller_states)
 
-        o_prime = K.sigmoid(K.dot(controller_output, self.W_prime) + self.b_prime)
+        o_prime = K.tanh(K.dot(controller_output_states[0], self.W_prime) + self.b_prime)
         pop = K.sigmoid(K.expand_dims(K.dot(o_prime, self.W_pop)) + self.b_pop)
         push = K.sigmoid(K.expand_dims(K.dot(o_prime, self.W_push)) + self.b_push)
         v = K.tanh(K.dot(o_prime, self.W_v) + self.b_v)
